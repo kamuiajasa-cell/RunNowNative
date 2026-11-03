@@ -1,0 +1,10 @@
+{
+  "name": "RunNow Android",
+  "image": "mcr.microsoft.com/devcontainers/java:1-17-bookworm",
+  "hostRequirements": { "cpus": 4, "memory": "8gb" },
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "remoteEnv": {
+    "ANDROID_HOME": "/home/vscode/android-sdk",
+    "PATH": "${containerEnv:PATH}:/home/vscode/gradle/gradle-8.11.1/bin:/home/vscode/android-sdk/platform-tools"
+  }
+}

@@ -1,0 +1,88 @@
+JoyoFit
+Copyright (C) 2026 dzulfikar08
+
+This program is free software: you can redistribute it and/or modify it under the terms of the
+GNU Affero General Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version. See LICENSE.
+
+The Huawei protocol implementation in
+modules/huawei-wear/android/src/main/java/nodomain/freeyourgadget/gadgetbridge/
+and the Kotlin session layer in modules/huawei-wear/android/src/main/java/com/joyodigitama/huaweiwear/,
+and their Swift port in modules/huawei-wear/ios/HuaweiProtocol/ (the iOS protocol layer),
+are derived from Gadgetbridge (https://codeberg.org/Freeyourgadget/Gadgetbridge),
+upstream commit bb7a1e83a29837153bf0c3a50e9869dec3dac0dd, licensed AGPL-3.0-or-later.
+Original copyright notices are retained in each ported file; modified files carry a
+"Modified for watch-fit" line.
+
+RouteFile.kt and RouteFile.swift (the route file sent to the watch) are ports of Gadgetbridge's HuaweiConvertTrack.java and
+HuaweiRouteTrack.java, and the route push in P2pController follows its HuaweiP2PFitnessData.java; verbatim copies of the two
+converter classes live in modules/huawei-wear/ios/HuaweiProtocol/GoldenGen/vendor/ only to generate the test fixtures.
+
+The song storage on the watch (MusicControl.java commands 04, 05, 08, 09 and 0D, HuaweiMusicUtils.java, WatchMusic.kt and the
+Swift twins MusicPackets.swift and WatchMusic.swift) follows Gadgetbridge's packets/MusicControl.java, HuaweiMusicUtils.java,
+HuaweiMusicManager.java, the music requests and AsynchronousResponse at upstream commit c8e59392b7437b04c9735dcaf5f33555799ba9a9
+(AGPL-3.0-or-later, copyright Damien Gaignon, Martin.JM, Me7c7).
+
+The Bluetooth scale decoders in src/features/scale/ (protocols/*.ts, bodyComposition.ts) are TypeScript ports of
+openScale (https://github.com/oliexdev/openScale, Copyright (C) olie.xdev, GPL-3.0-or-later, which is compatible with this
+project's AGPL-3.0-or-later): the handlers under android_app/app/src/main/java/com/health/openscale/core/bluetooth/scales/ and
+the formula libraries under .../bluetooth/libs/. Each ported file names its openScale source files and the openScale tests its
+byte vectors come from, and keeps the copyright line. docs/scale.md lists them.
+
+The HUAWEI Scale 2 Pro / 3 / 3 Pro protocol (src/features/scale/protocols/hagridLib.ts, huaweiHagrid.ts and their tests) is
+derived from openScale's libs/HuaweiHagridWspLib.kt, scales/HuaweiHagridWspHandler.kt and their tests at upstream commit
+87edad4813e400cd4871109fc72a0bcf4d13f336, Copyright (C) 2026 openScale contributors, GPL-3.0-or-later. Like openScale, it
+contains no keys: the person who owns the scale enters them. It uses @noble/ciphers and @noble/hashes
+(https://github.com/paulmillr/noble-ciphers, https://github.com/paulmillr/noble-hashes, MIT) for AES, SHA-256 and HMAC.
+
+The importer for Huawei's Privacy Centre health export (HuaweiExport*.kt, HuaweiHealthDetailParser.kt,
+HuaweiMotionPathParser.kt in modules/huawei-wear/android/) was written for this project. Its idea of the export
+layout (folders, record keys, the motion-path track records, the pause marker and the invalid-JSON quirks) comes from
+reading what these MIT-licensed community tools document; no code was copied from them:
+  m1ty/huawei2gpx (https://github.com/m1ty/huawei2gpx),
+  JordyThien/Huawei-Health-Importer (https://github.com/JordyThien/Huawei-Health-Importer),
+  driemekasten/hhealth2zepp (https://github.com/driemekasten/hhealth2zepp).
+It uses zip4j (https://github.com/srikanth-lingala/zip4j, Apache-2.0) to read the AES-encrypted ZIP.
+
+Huawei and HUAWEI WATCH FIT are trademarks of Huawei Technologies Co., Ltd. This project is not
+affiliated with or endorsed by Huawei.
+
+Strava, the Strava symbol and the "Connect with Strava" and "Compatible with Strava" artwork (assets/strava/) are trademarks
+of Strava, Inc. Google Health Connect and its icon (assets/brand-marks/health-connect.png) belong to Google LLC. Apple Health
+and its icon (assets/brand-marks/apple-health.png, Apple Design Resources) belong to Apple Inc.; that icon is not covered by
+this project's licence and may only appear in the UI of an iOS app. Claude and ChatGPT are trademarks of Anthropic PBC and
+OpenAI; JoyoFit shows their names as text only. None of them endorses this project. Rules per mark: docs/brand-marks.md.
+
+Exercise library of the Coach (src/features/coach/exercises/, site/public/exercises/), retrieved 2026-10-18.
+Built by scripts/build-exercises.ts. The steps, common mistakes, Indonesian names and English names are written for
+this project; no instruction text of any dataset is copied.
+
+Classification data (primary and secondary muscles, level) comes from free-exercise-db,
+https://github.com/yuhonas/free-exercise-db (dist/exercises.json), licensed under The Unlicense (public domain
+dedication, LICENSE.md: "Anyone is free to copy, modify, publish, use, compile, sell, or distribute this software ...
+for any purpose, commercial or non-commercial"). No attribution is required.
+
+free-exercise-db's own images are NOT used. Its README says nothing about their origin, its maintainer answered
+"I actually have no idea where the images are from or if they are royalty free so usage would be at your own risk"
+(https://github.com/yuhonas/free-exercise-db/issues/2), and the upstream project it was forked from states about them
+"these have been scrapped off the internet, therefore l do not own the copy right for these images and would advise
+against using them in comercial projects" (https://github.com/wrkout/exercises.json/blob/master/CONTRIBUTING.md).
+Issue #13 of free-exercise-db (still open) asks the same question without a licence answer.
+
+The pictures come from wger, https://wger.de (API https://wger.de/api/v2/exerciseimage/), where every image carries its
+own licence and author. Only images that are not AI generated, name their author, and were checked by eye are used:
+56 images of 38 exercises, all licensed CC BY-SA 3.0 (https://creativecommons.org/licenses/by-sa/3.0/) or CC BY-SA 4.0
+(https://creativecommons.org/licenses/by-sa/4.0/). Attribution is required and adaptations stay under the same licence.
+The copies in site/public/exercises/ are adaptations (flattened onto white, scaled to at most 480 px, converted to WebP)
+and are shared under the licence of the original. Author, licence and source page of every image:
+https://fit.joyorogo.com/exercises/ATTRIBUTION.txt (generated into site/public/exercises/ATTRIBUTION.txt). The main
+authors are Everkinetic (https://everkinetic.com, CC BY-SA 3.0) and wger contributors such as Franpol, philip, utkb and
+AlucardEvil40 (CC BY-SA 4.0). The images are separate works shown next to the AGPL code; the licence of the code does not
+change theirs.
+
+In-app credit line (coach:library.credits): "Gambar latihan dari wger.de, lisensi Creative Commons (CC BY-SA); pembuat dan
+lisensi tiap gambar ada di fit.joyorogo.com/exercises/ATTRIBUTION.txt. Data otot dan tingkat dari free-exercise-db (domain
+publik)."
+
+The fonts in assets/fonts (Manrope, Nunito, Archivo, Bebas Neue, Space Grotesk, JetBrains Mono, Fraunces) are licensed under the SIL Open Font
+License 1.1; the license text of each is in assets/fonts/licenses. They come from the Expo Google Fonts packages (@expo-google-fonts/*).

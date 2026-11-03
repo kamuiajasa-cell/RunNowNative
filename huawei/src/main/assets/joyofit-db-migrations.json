@@ -1,0 +1,110 @@
+[
+  [
+    "CREATE TABLE step_samples (timestamp INTEGER PRIMARY KEY NOT NULL, steps INTEGER NOT NULL, calories INTEGER NOT NULL, distance INTEGER NOT NULL, heart_rate INTEGER, spo2 INTEGER, resting_heart_rate INTEGER)",
+    "CREATE TABLE sleep_segments (start INTEGER NOT NULL, end INTEGER NOT NULL, type INTEGER NOT NULL, PRIMARY KEY (start, type))",
+    "CREATE TABLE device (address TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, product_model TEXT, software_version TEXT, last_sync INTEGER)"
+  ],
+  [
+    "ALTER TABLE sleep_segments ADD COLUMN stage TEXT"
+  ],
+  [
+    "CREATE TABLE workouts (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, workout_number INTEGER NOT NULL, start INTEGER NOT NULL UNIQUE, end INTEGER NOT NULL, sport_type INTEGER NOT NULL, sport_name TEXT NOT NULL, duration INTEGER NOT NULL, distance INTEGER NOT NULL, calories INTEGER NOT NULL, avg_hr INTEGER, max_hr INTEGER, steps INTEGER NOT NULL, summary_json TEXT NOT NULL, complete INTEGER NOT NULL DEFAULT 1)",
+    "CREATE TABLE workout_points (workout_id INTEGER NOT NULL, ts INTEGER NOT NULL, lat REAL, lon REAL, alt REAL, hr INTEGER)",
+    "CREATE INDEX workout_points_by_workout ON workout_points (workout_id, ts)"
+  ],
+  [
+    "ALTER TABLE step_samples ADD COLUMN rev INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE sleep_segments ADD COLUMN rev INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE workouts ADD COLUMN rev INTEGER NOT NULL DEFAULT 0",
+    "UPDATE step_samples SET rev = rowid",
+    "UPDATE sleep_segments SET rev = rowid",
+    "UPDATE workouts SET rev = id",
+    "CREATE TABLE cloud_cursor (tbl TEXT PRIMARY KEY NOT NULL, seq INTEGER NOT NULL, uploaded INTEGER NOT NULL DEFAULT 0)",
+    "INSERT INTO cloud_cursor (tbl, seq) VALUES ('step_samples', (SELECT COALESCE(MAX(rev), 0) FROM step_samples)), ('sleep_segments', (SELECT COALESCE(MAX(rev), 0) FROM sleep_segments)), ('workouts', (SELECT COALESCE(MAX(rev), 0) FROM workouts))",
+    "CREATE TABLE cloud_state (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)",
+    "CREATE INDEX step_samples_by_rev ON step_samples (rev)",
+    "CREATE INDEX sleep_segments_by_rev ON sleep_segments (rev)",
+    "CREATE INDEX workouts_by_rev ON workouts (rev)",
+    "CREATE TRIGGER step_samples_rev_insert AFTER INSERT ON step_samples BEGIN UPDATE cloud_cursor SET seq = seq + 1 WHERE tbl = 'step_samples'; UPDATE step_samples SET rev = (SELECT seq FROM cloud_cursor WHERE tbl = 'step_samples') WHERE rowid = NEW.rowid; END",
+    "CREATE TRIGGER step_samples_rev_update AFTER UPDATE ON step_samples WHEN NEW.rev = OLD.rev BEGIN UPDATE cloud_cursor SET seq = seq + 1 WHERE tbl = 'step_samples'; UPDATE step_samples SET rev = (SELECT seq FROM cloud_cursor WHERE tbl = 'step_samples') WHERE rowid = NEW.rowid; END",
+    "CREATE TRIGGER sleep_segments_rev_insert AFTER INSERT ON sleep_segments BEGIN UPDATE cloud_cursor SET seq = seq + 1 WHERE tbl = 'sleep_segments'; UPDATE sleep_segments SET rev = (SELECT seq FROM cloud_cursor WHERE tbl = 'sleep_segments') WHERE rowid = NEW.rowid; END",
+    "CREATE TRIGGER sleep_segments_rev_update AFTER UPDATE ON sleep_segments WHEN NEW.rev = OLD.rev BEGIN UPDATE cloud_cursor SET seq = seq + 1 WHERE tbl = 'sleep_segments'; UPDATE sleep_segments SET rev = (SELECT seq FROM cloud_cursor WHERE tbl = 'sleep_segments') WHERE rowid = NEW.rowid; END",
+    "CREATE TRIGGER workouts_rev_insert AFTER INSERT ON workouts BEGIN UPDATE cloud_cursor SET seq = seq + 1 WHERE tbl = 'workouts'; UPDATE workouts SET rev = (SELECT seq FROM cloud_cursor WHERE tbl = 'workouts') WHERE rowid = NEW.rowid; END",
+    "CREATE TRIGGER workouts_rev_update AFTER UPDATE ON workouts WHEN NEW.rev = OLD.rev BEGIN UPDATE cloud_cursor SET seq = seq + 1 WHERE tbl = 'workouts'; UPDATE workouts SET rev = (SELECT seq FROM cloud_cursor WHERE tbl = 'workouts') WHERE rowid = NEW.rowid; END"
+  ],
+  [
+    "CREATE TABLE diet_day (date TEXT PRIMARY KEY NOT NULL, meals_json TEXT NOT NULL, goals_json TEXT NOT NULL DEFAULT '{}', updated_at INTEGER NOT NULL, pushed_at INTEGER)",
+    "CREATE TABLE body_metrics (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL)"
+  ],
+  [
+    "CREATE TABLE cycle_periods (start TEXT PRIMARY KEY NOT NULL, end TEXT, modified INTEGER NOT NULL)",
+    "CREATE TABLE cycle_days (day TEXT PRIMARY KEY NOT NULL, flow INTEGER NOT NULL DEFAULT 0, cramps INTEGER NOT NULL DEFAULT 0, modified INTEGER NOT NULL)"
+  ],
+  [
+    "CREATE TABLE health_metrics (type TEXT NOT NULL, ts INTEGER NOT NULL, last_ts INTEGER NOT NULL, value REAL, values_json TEXT NOT NULL, PRIMARY KEY (type, ts))",
+    "CREATE INDEX health_metrics_by_ts ON health_metrics (ts)",
+    "CREATE TABLE health_metric_status (type TEXT PRIMARY KEY NOT NULL, dict_class INTEGER NOT NULL, title TEXT NOT NULL, supported INTEGER NOT NULL, gate TEXT NOT NULL, checked_at INTEGER NOT NULL, synced_at INTEGER, rows_added INTEGER, note TEXT)"
+  ],
+  [
+    "CREATE TABLE sleep_scores (start INTEGER PRIMARY KEY NOT NULL, end INTEGER NOT NULL, score INTEGER NOT NULL, efficiency INTEGER)"
+  ],
+  [
+    "CREATE TABLE rri_samples (ts_ms INTEGER PRIMARY KEY NOT NULL, rri INTEGER NOT NULL, sqi INTEGER)",
+    "CREATE TABLE hrv_readings (start INTEGER NOT NULL, end INTEGER NOT NULL, source TEXT NOT NULL, rmssd REAL NOT NULL, sdnn REAL, mean_rr REAL, beats INTEGER NOT NULL, PRIMARY KEY (start, source))",
+    "CREATE INDEX hrv_readings_by_end ON hrv_readings (end)"
+  ],
+  [
+    "ALTER TABLE step_samples ADD COLUMN imported INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE sleep_segments ADD COLUMN imported INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE workouts ADD COLUMN imported INTEGER NOT NULL DEFAULT 0"
+  ],
+  [
+    "CREATE TABLE strava_upload (workout_start INTEGER PRIMARY KEY NOT NULL, status TEXT NOT NULL, upload_id INTEGER, activity_id INTEGER, error TEXT, attempts INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)"
+  ],
+  [
+    "ALTER TABLE workout_points ADD COLUMN speed REAL",
+    "ALTER TABLE workout_points ADD COLUMN cadence INTEGER",
+    "ALTER TABLE workout_points ADD COLUMN stride REAL",
+    "ALTER TABLE workout_points ADD COLUMN power INTEGER"
+  ],
+  [
+    "CREATE TABLE cloud_workout (start INTEGER PRIMARY KEY NOT NULL, rev INTEGER NOT NULL, engine_rev INTEGER NOT NULL, version INTEGER NOT NULL, hash TEXT NOT NULL, bytes INTEGER NOT NULL, uploaded_at INTEGER NOT NULL)"
+  ],
+  [
+    "ALTER TABLE device ADD COLUMN alias TEXT",
+    "ALTER TABLE device ADD COLUMN is_primary INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE device ADD COLUMN added_at INTEGER",
+    "ALTER TABLE device ADD COLUMN tracks_health INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE device ADD COLUMN bg_sync INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE step_samples ADD COLUMN device TEXT",
+    "ALTER TABLE sleep_segments ADD COLUMN device TEXT",
+    "ALTER TABLE sleep_scores ADD COLUMN device TEXT",
+    "ALTER TABLE workouts ADD COLUMN device TEXT",
+    "ALTER TABLE health_metrics ADD COLUMN device TEXT",
+    "ALTER TABLE hrv_readings ADD COLUMN device TEXT",
+    "CREATE TABLE workout_shadow (device TEXT NOT NULL, start INTEGER NOT NULL, end INTEGER NOT NULL, kept_start INTEGER NOT NULL, PRIMARY KEY (device, start))",
+    "CREATE INDEX workouts_by_device_end ON workouts (device, end)",
+    "UPDATE device SET added_at = COALESCE(last_sync, CAST(strftime('%s', 'now') AS INTEGER))",
+    "UPDATE device SET is_primary = 1 WHERE address = (SELECT address FROM device ORDER BY last_sync IS NULL, last_sync DESC, address LIMIT 1)",
+    "DROP TRIGGER step_samples_rev_update",
+    "DROP TRIGGER sleep_segments_rev_update",
+    "DROP TRIGGER workouts_rev_update",
+    "UPDATE step_samples SET device = (SELECT address FROM device) WHERE imported = 0 AND (SELECT COUNT(*) FROM device) = 1",
+    "UPDATE sleep_segments SET device = (SELECT address FROM device) WHERE imported = 0 AND (SELECT COUNT(*) FROM device) = 1",
+    "UPDATE sleep_scores SET device = (SELECT address FROM device) WHERE (SELECT COUNT(*) FROM device) = 1",
+    "UPDATE workouts SET device = (SELECT address FROM device) WHERE imported = 0 AND (SELECT COUNT(*) FROM device) = 1",
+    "UPDATE health_metrics SET device = (SELECT address FROM device) WHERE (SELECT COUNT(*) FROM device) = 1",
+    "UPDATE hrv_readings SET device = (SELECT address FROM device) WHERE (SELECT COUNT(*) FROM device) = 1",
+    "CREATE TRIGGER step_samples_rev_update AFTER UPDATE ON step_samples WHEN NEW.rev = OLD.rev BEGIN UPDATE cloud_cursor SET seq = seq + 1 WHERE tbl = 'step_samples'; UPDATE step_samples SET rev = (SELECT seq FROM cloud_cursor WHERE tbl = 'step_samples') WHERE rowid = NEW.rowid; END",
+    "CREATE TRIGGER sleep_segments_rev_update AFTER UPDATE ON sleep_segments WHEN NEW.rev = OLD.rev BEGIN UPDATE cloud_cursor SET seq = seq + 1 WHERE tbl = 'sleep_segments'; UPDATE sleep_segments SET rev = (SELECT seq FROM cloud_cursor WHERE tbl = 'sleep_segments') WHERE rowid = NEW.rowid; END",
+    "CREATE TRIGGER workouts_rev_update AFTER UPDATE ON workouts WHEN NEW.rev = OLD.rev BEGIN UPDATE cloud_cursor SET seq = seq + 1 WHERE tbl = 'workouts'; UPDATE workouts SET rev = (SELECT seq FROM cloud_cursor WHERE tbl = 'workouts') WHERE rowid = NEW.rowid; END",
+    "CREATE TRIGGER step_samples_device_guard BEFORE UPDATE ON step_samples WHEN OLD.device IS NOT NULL AND NEW.device IS NOT NULL AND OLD.device <> NEW.device AND NOT (NOT (NEW.steps = 0 AND NEW.calories = 0 AND NEW.distance = 0 AND NEW.heart_rate IS NULL AND NEW.spo2 IS NULL AND NEW.resting_heart_rate IS NULL) AND (NEW.device IS (SELECT address FROM device WHERE is_primary = 1) OR (OLD.steps = 0 AND OLD.calories = 0 AND OLD.distance = 0 AND OLD.heart_rate IS NULL AND OLD.spo2 IS NULL AND OLD.resting_heart_rate IS NULL))) BEGIN SELECT RAISE(IGNORE); END",
+    "CREATE TRIGGER sleep_segments_claim_before BEFORE INSERT ON sleep_segments WHEN NEW.device IS NOT NULL AND NEW.device IS NOT (SELECT address FROM device WHERE is_primary = 1) AND EXISTS (SELECT 1 FROM sleep_segments o WHERE o.device IS NOT NULL AND o.device <> NEW.device AND o.start >= NEW.start - 172800 AND o.start < NEW.end AND o.end > NEW.start) BEGIN SELECT RAISE(IGNORE); END",
+    "CREATE TRIGGER sleep_segments_claim_after AFTER INSERT ON sleep_segments WHEN NEW.device IS NOT NULL AND NEW.device IS (SELECT address FROM device WHERE is_primary = 1) BEGIN DELETE FROM sleep_segments WHERE device IS NOT NULL AND device <> NEW.device AND start >= NEW.start - 172800 AND start < NEW.end AND end > NEW.start; END",
+    "CREATE TRIGGER sleep_scores_claim_before BEFORE INSERT ON sleep_scores WHEN NEW.device IS NOT NULL AND NEW.device IS NOT (SELECT address FROM device WHERE is_primary = 1) AND EXISTS (SELECT 1 FROM sleep_scores o WHERE o.device IS NOT NULL AND o.device <> NEW.device AND o.start >= NEW.start - 172800 AND o.start < NEW.end AND o.end > NEW.start) BEGIN SELECT RAISE(IGNORE); END",
+    "CREATE TRIGGER sleep_scores_claim_after AFTER INSERT ON sleep_scores WHEN NEW.device IS NOT NULL AND NEW.device IS (SELECT address FROM device WHERE is_primary = 1) BEGIN DELETE FROM sleep_scores WHERE device IS NOT NULL AND device <> NEW.device AND start >= NEW.start - 172800 AND start < NEW.end AND end > NEW.start; END",
+    "CREATE TRIGGER hrv_readings_claim_before BEFORE INSERT ON hrv_readings WHEN NEW.device IS NOT NULL AND NEW.source = 'night' AND NEW.device IS NOT (SELECT address FROM device WHERE is_primary = 1) AND EXISTS (SELECT 1 FROM hrv_readings o WHERE o.device IS NOT NULL AND o.device <> NEW.device AND o.source = NEW.source AND o.start >= NEW.start - 172800 AND o.start < NEW.end AND o.end > NEW.start) BEGIN SELECT RAISE(IGNORE); END",
+    "CREATE TRIGGER hrv_readings_claim_after AFTER INSERT ON hrv_readings WHEN NEW.device IS NOT NULL AND NEW.source = 'night' AND NEW.device IS (SELECT address FROM device WHERE is_primary = 1) BEGIN DELETE FROM hrv_readings WHERE device IS NOT NULL AND device <> NEW.device AND source = NEW.source AND start >= NEW.start - 172800 AND start < NEW.end AND end > NEW.start; END",
+    "CREATE TRIGGER health_metrics_device_guard BEFORE UPDATE ON health_metrics WHEN OLD.device IS NOT NULL AND NEW.device IS NOT NULL AND OLD.device <> NEW.device AND NEW.device IS NOT (SELECT address FROM device WHERE is_primary = 1) BEGIN SELECT RAISE(IGNORE); END"
+  ]
+]
