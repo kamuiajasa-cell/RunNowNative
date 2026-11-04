@@ -8,7 +8,7 @@ import android.content.Intent
  */
 internal object Routes {
     /** Kelompok yang ada di pengaturan.html. Tambah di sini bersama kelompok baru di tabel G pada pengaturan.html. */
-    private val GROUPS = setOf("sinkron", "cuaca", "notifikasi", "kesehatan")
+    private val GROUPS = setOf("sinkron", "dasar", "cuaca", "notifikasi", "kesehatan")
 
     private val ALIAS = mapOf("/settings/notification-apps" to "notifikasi")
 

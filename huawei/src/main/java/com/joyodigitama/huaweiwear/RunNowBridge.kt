@@ -56,6 +56,7 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
 
   private val table: Map<String, Rpc> = HashMap<String, Rpc>().also { t ->
     addSync(t)
+    addBasics(t)
     addWeather(t)
     addNotifications(t)
     addHealth(t)
@@ -142,8 +143,7 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
   /** Sinkron dan latar belakang. */
   private fun addSync(t: MutableMap<String, Rpc>) {
     t.m("syncNow") {
-      val link = HuaweiWatch.get(app).state.value.link
-      if (link != "connected" && link != "syncing") throw IllegalStateException("Jam belum tersambung. Sambungkan lewat layar Koneksi.")
+      requireConnected()
       runtime.link.syncActivity(fullHistory = false, sinceDays = null)
       null
     }
@@ -166,6 +166,64 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
     }
     t.m("openBatteryExemption") { runtime.openBatteryExemption(); null }
     t.m("openAutoStartSettings") { runtime.openAutoStartSettings(); null }
+  }
+
+  /** Jam dan dasar: profil, zona detak, bahasa jam, baterai, riwayat penuh, laporan dukungan, lupakan jam. */
+  private fun addBasics(t: MutableMap<String, Rpc>) {
+    t.m("getUserProfile") { profileJs() }
+    t.m("setUserProfile", PROFILE) { a ->
+      val o = a[0] as JSONObject
+      val profile = UserProfileData(
+        heightCm = o.getInt("heightCm"),
+        weightKg = o.getDouble("weightKg"),
+        birthYear = o.getInt("birthYear"),
+        sex = o.getString("sex"),
+        dailyStepGoal = o.getInt("dailyStepGoal"),
+      )
+      mapOf("sent" to runtime.setUserProfile(profile))
+    }
+    t.m("getHeartRateZonesStatus") { zonesJs() }
+    t.m("setHeartRateZones", ZONES) { a ->
+      val o = a[0] as JSONObject?
+      val zones = o?.let {
+        HeartRateZonesCalc.UserZones(
+          method = if (it.getString("method") == "hrr") HeartRateZonesCalc.Method.HRR else HeartRateZonesCalc.Method.MHR,
+          maxHr = it.getInt("maxHr"),
+          restingHr = it.getInt("restingHr"),
+          zones = zonesList(it) ?: throw IllegalArgumentException("Zona tidak valid."),
+          warningEnabled = it.getBoolean("warningEnabled"),
+          warningLimit = it.getInt("warningLimit"),
+        )
+      }
+      mapOf("sent" to runtime.setHeartRateZones(zones))
+    }
+    t.m("getWatchLanguage") { mapOf("language" to runtime.settings.watchLanguage) }
+    t.m("setWatchLanguage", LANG) { a -> mapOf("took" to runtime.language.setPinned(a[0] as String?)) }
+    t.m("getForceBle") { runtime.forceBle() }
+    t.m("setForceBle", BOOL) { a -> runtime.setForceBle(a[0] as Boolean); null }
+    t.m("getMorningSummaryEnabled") { runtime.morningSummaryEnabled() }
+    t.m("setLiveHeartRate", BOOL) { a -> runtime.liveHeartRate.setActive(a[0] as Boolean); null }
+    t.m("getSupportReport") { runtime.supportReport() }
+    t.m("refreshBattery") {
+      requireConnected()
+      mapOf("level" to runtime.link.refreshBattery())
+    }
+    t.m("syncFullHistory") {
+      requireConnected()
+      runtime.link.syncActivity(fullHistory = true, sinceDays = null)
+      null
+    }
+    t.m("refetchWorkoutData", REFETCH) { a ->
+      requireConnected()
+      val arr = a[0] as JSONArray
+      runtime.link.refetchWorkoutData(List(arr.length()) { i -> arr.getLong(i) }).toJs()
+    }
+    // Tanpa argumen: yang dilupakan selalu jam yang sedang diingat, bukan alamat kiriman halaman.
+    t.m("forgetDevice") {
+      val address = runtime.settings.watchAddress ?: throw IllegalStateException("Belum ada jam yang diingat.")
+      runtime.forget(address)
+      null
+    }
   }
 
   /** Cuaca. */
@@ -261,6 +319,43 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
 
   // ---- bantuan untuk metode ----
 
+  private fun requireConnected() {
+    val link = HuaweiWatch.get(app).state.value.link
+    if (link != "connected" && link != "syncing") throw IllegalStateException("Jam belum tersambung. Sambungkan lewat layar Koneksi.")
+  }
+
+  /** Profil tersimpan; kalau belum ada, angka contoh untuk isian (configured = false). */
+  private fun profileJs(): Map<String, Any?> {
+    val p = runtime.settings.profile
+    return if (p != null) {
+      p.toJs() + ("configured" to true)
+    } else {
+      mapOf(
+        "configured" to false, "heightCm" to 170, "weightKg" to 65.0, "birthYear" to 1990,
+        "sex" to "unknown", "dailyStepGoal" to 8000,
+      )
+    }
+  }
+
+  /** Status zona (configured, via) ditambah isi zona: yang tersimpan, atau bawaan untuk umur di profil (metode persen detak maksimum). */
+  private fun zonesJs(): Map<String, Any?> {
+    val saved = runtime.settings.heartRateZones
+    val maxHr = (HeartRateZonesCalc.MAXIMUM_HEART_RATE - HeartRateZonesSync.age(runtime.settings.profile)).coerceIn(100, 219)
+    val z = HeartRateZonesCalc.zones(HeartRateZonesCalc.Method.MHR, maxHr)
+    val shown = saved ?: HeartRateZonesCalc.UserZones(
+      HeartRateZonesCalc.Method.MHR, maxHr, HeartRateZonesCalc.DEFAULT_REST_HEART_RATE,
+      listOf(z.zone1, z.zone2, z.zone3, z.zone4, z.zone5), true, maxHr,
+    )
+    return runtime.heartRateZonesStatus() + mapOf(
+      "method" to if (shown.method == HeartRateZonesCalc.Method.HRR) "hrr" else "max",
+      "maxHr" to shown.maxHr,
+      "restingHr" to shown.restingHr,
+      "zones" to shown.zones,
+      "warningEnabled" to shown.warningEnabled,
+      "warningLimit" to shown.warningLimit,
+    )
+  }
+
   private suspend fun notificationsAllowed(): Boolean =
     Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || host.ask(listOf(Manifest.permission.POST_NOTIFICATIONS))
 
@@ -321,6 +416,95 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
     val SCREEN = Rule { a ->
       val r = a.getOrNull(0)
       if (r is String && (r in ALLOWED_ROUTES || PENGATURAN.matches(r))) null else "Layar tidak diizinkan."
+    }
+
+    val LANGS = setOf("id", "en")
+
+    val LANG = Rule { a ->
+      val v = a.getOrNull(0)
+      if (a.size == 1 && (v == null || (v is String && LANGS.contains(v)))) null else "Bahasa tidak dikenal."
+    }
+
+    /** Bilangan bulat dari bidang JSON, atau null kalau tidak ada atau bukan bilangan bulat. */
+    fun JSONObject.whole(name: String): Int? {
+      val d = optDouble(name, Double.NaN)
+      return if (!d.isNaN() && d == Math.floor(d) && Math.abs(d) < 1e9) d.toInt() else null
+    }
+
+    fun JSONObject.within(name: String, range: IntRange): Boolean {
+      val v = whole(name) ?: return false
+      return v in range
+    }
+
+    val SEXES = setOf<Any?>("male", "female", "unknown")
+
+    val PROFILE = Rule { a ->
+      val o = a.singleOrNull() as? JSONObject
+      if (o == null) {
+        "Profil tidak valid."
+      } else {
+        val w = o.optDouble("weightKg", Double.NaN)
+        when {
+          !o.within("heightCm", 100..250) -> "Tinggi badan harus 100 sampai 250 cm."
+          w.isNaN() || w < 20.0 || w > 300.0 -> "Berat badan harus 20 sampai 300 kg."
+          !o.within("birthYear", 1900..java.time.Year.now().value) -> "Tahun lahir harus 1900 sampai tahun ini."
+          o.opt("sex") !in SEXES -> "Jenis kelamin harus male, female, atau unknown."
+          !o.within("dailyStepGoal", 1000..100_000) -> "Target langkah harus 1000 sampai 100000."
+          else -> null
+        }
+      }
+    }
+    /** Lima batas bawah zona sebagai bilangan bulat; null kalau bukan lima bilangan bulat. */
+    fun zonesList(o: JSONObject): List<Int>? {
+      val arr = o.optJSONArray("zones") ?: return null
+      if (arr.length() != 5) return null
+      val out = ArrayList<Int>(5)
+      for (i in 0 until 5) {
+        val d = arr.optDouble(i, Double.NaN)
+        if (d.isNaN() || d != Math.floor(d) || Math.abs(d) >= 1e9) return null
+        out.add(d.toInt())
+      }
+      return out
+    }
+
+    /** Argumen tunggal: null = kembali ke bawaan, atau objek zona. Aturan sama dengan HeartRateZonesCalc.UserZones.problem(). */
+    val ZONES = Rule { a ->
+      val o = a.getOrNull(0)
+      when {
+        a.size != 1 -> "Metode ini menerima tepat satu argumen."
+        o == null -> null
+        o !is JSONObject -> "Zona tidak valid."
+        else -> {
+          val z = zonesList(o)
+          val max = o.whole("maxHr")
+          val rest = o.whole("restingHr")
+          when {
+            o.optString("method") != "max" && o.optString("method") != "hrr" -> "Metode zona harus max atau hrr."
+            !o.within("maxHr", 100..219) -> "Detak maksimum harus 100 sampai 219 bpm."
+            !o.within("restingHr", 30..110) -> "Detak istirahat harus 30 sampai 110 bpm."
+            rest != null && max != null && rest >= max -> "Detak istirahat harus di bawah detak maksimum."
+            z == null -> "Isi kelima zona dengan angka bulat."
+            z[0] < 30 -> "Zona 1 mulai dari 30 bpm atau lebih."
+            z.zipWithNext().any { (x, y) -> x >= y } -> "Batas zona harus naik dari zona 1 sampai 5."
+            max != null && z[4] >= max -> "Zona 5 harus mulai di bawah detak maksimum."
+            o.opt("warningEnabled") !is Boolean -> "Alarm batas harus benar atau salah."
+            !o.within("warningLimit", 100..219) -> "Batas alarm harus 100 sampai 219 bpm."
+            else -> null
+          }
+        }
+      }
+    }
+
+    /** Daftar waktu mulai latihan (detik atau ms sesuai index.html), 1 sampai 200 angka. */
+    val REFETCH = Rule { a ->
+      val arr = a.singleOrNull() as? JSONArray
+      if (arr == null || arr.length() !in 1..200) {
+        "Daftar latihan harus berisi 1 sampai 200 waktu mulai."
+      } else if ((0 until arr.length()).any { arr.opt(it) !is Number }) {
+        "Waktu mulai latihan harus angka."
+      } else {
+        null
+      }
     }
 
     fun Any?.isIntIn(set: Set<Int>): Boolean =

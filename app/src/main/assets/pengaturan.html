@@ -16,7 +16,7 @@ box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:en
 html{background:var(--bg);scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0 auto;max-width:560px;padding:0 14px 40px;background:var(--bg);color:var(--tx);
 font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
-button,input,select{font:inherit;color:inherit}
+button,input,select,textarea{font:inherit;color:inherit}
 button{cursor:pointer;border:0;background:none}
 :focus-visible{outline:3px solid var(--pr);outline-offset:2px}
 
@@ -62,8 +62,16 @@ input[type=number],input[type=text]{width:100%}
 .btn{min-height:46px;padding:10px 16px;border-radius:14px;background:var(--pr);color:var(--cd);font-weight:700;text-align:center}
 :root[data-theme=dark] .btn{color:var(--bg)}
 .btn.g{background:var(--el);color:var(--tx);border:1px solid var(--ln)}
+.btn.dg{background:var(--bad);color:#fff}
+.btn:disabled{opacity:.6}
 .btn.sm{flex:none}
 .btns{display:flex;flex-wrap:wrap;gap:8px}
+.frm{display:flex;flex-direction:column;gap:8px}
+.fld{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:46px}
+.fld span{flex:1;min-width:0;font-size:14px;font-weight:600}
+.fld input[type=number],.fld select{width:132px;flex:none;min-width:0}
+textarea{width:100%;min-height:170px;padding:9px 12px;border:1.5px solid var(--ln);border-radius:14px;background:var(--bg);
+font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;resize:vertical}
 .btns .btn{flex:1;min-width:120px}
 
 #m.busy .row,#m.busy .go{opacity:.6;pointer-events:none}
@@ -139,6 +147,13 @@ window.__hrvTick = function (n) {
      args            argumen tetap                                      (button)
      plain           tombol sekunder                                    (button)
      list            [{label, m, args, done}]                           (buttons)
+   Tambahan langkah 4:
+     t: "form"      beberapa isian dalam satu simpan. fields: [{k, t: number|select|check, label, val:(s)=>nilai, min, max, step, opts}];
+                     pack: (nilai {k: isi}) => satu argumen yang dikirim ke m; btn: teks tombol
+     t: "report"    tombol buat laporan dukungan (getSupportReport), kotak teks, dan tombol salin
+     select: nul     nilai pilihan yang dikirim sebagai null (mis. "auto")
+     button: confirm teks tombol pada ketukan pertama; perlu ketukan kedua dalam 5 detik; danger: tombol merah
+     done            boleh fungsi (s, jawaban) => teks
 */
 var mnt = function (n) { return n + " menit"; };
 var G = [
@@ -166,6 +181,72 @@ var G = [
     ]
   },
   {
+    id: "dasar", title: "Jam dan profil",
+    sub: "Profil badan, zona detak, bahasa jam, dan alat bantu sambungan.",
+    load: { p: "getUserProfile", z: "getHeartRateZonesStatus", lg: "getWatchLanguage", fb: "getForceBle" },
+    items: [
+      { t: "form", need: ["p"], label: "Profil",
+        hint: function (s) { return s.p.configured ? "Dipakai jam untuk kalori dan zona detak." : "Belum diisi. Angka di bawah hanya contoh."; },
+        fields: [
+          { k: "heightCm", t: "number", label: "Tinggi (cm)", min: 100, max: 250, val: function (s) { return s.p.heightCm; } },
+          { k: "weightKg", t: "number", label: "Berat (kg)", min: 20, max: 300, step: 0.1, val: function (s) { return s.p.weightKg; } },
+          { k: "birthYear", t: "number", label: "Tahun lahir", min: 1900, max: new Date().getFullYear(), val: function (s) { return s.p.birthYear; } },
+          { k: "sex", t: "select", label: "Jenis kelamin", val: function (s) { return s.p.sex; },
+            opts: [["male", "Pria"], ["female", "Wanita"], ["unknown", "Tidak disebut"]] },
+          { k: "dailyStepGoal", t: "number", label: "Target langkah", min: 1000, max: 100000, val: function (s) { return s.p.dailyStepGoal; } }
+        ],
+        pack: function (v) { return v; },
+        btn: "Simpan profil", m: "setUserProfile", reload: true,
+        done: function (s, r) { return r && r.sent ? "Profil tersimpan dan dikirim ke jam." : "Profil tersimpan. Dikirim saat jam tersambung."; } },
+
+      { t: "note", need: ["z"], warn: true, vis: function (s) { return s.z.via === "none"; },
+        text: "Jam ini tidak menerima zona detak dari aplikasi. Zona tetap tersimpan." },
+      { t: "form", need: ["z"], label: "Zona detak jantung",
+        hint: function (s) {
+          var how = s.z.via ? "Jam menerima zona lewat jalur " + s.z.via + "." : "Jam belum tersambung; zona dikirim saat tersambung.";
+          return (s.z.configured ? "Zona buatanmu. " : "Bawaan menurut umur di profil. ") + how + " Isi tiap zona dengan detak terendahnya."; },
+        fields: [
+          { k: "method", t: "select", label: "Metode", val: function (s) { return s.z.method; },
+            opts: [["max", "Persen detak maksimum"], ["hrr", "Persen cadangan detak"]] },
+          { k: "maxHr", t: "number", label: "Detak maksimum", min: 100, max: 219, val: function (s) { return s.z.maxHr; } },
+          { k: "restingHr", t: "number", label: "Detak istirahat", min: 30, max: 110, val: function (s) { return s.z.restingHr; } },
+          { k: "z1", t: "number", label: "Zona 1 mulai", min: 30, max: 219, val: function (s) { return s.z.zones[0]; } },
+          { k: "z2", t: "number", label: "Zona 2 mulai", min: 30, max: 219, val: function (s) { return s.z.zones[1]; } },
+          { k: "z3", t: "number", label: "Zona 3 mulai", min: 30, max: 219, val: function (s) { return s.z.zones[2]; } },
+          { k: "z4", t: "number", label: "Zona 4 mulai", min: 30, max: 219, val: function (s) { return s.z.zones[3]; } },
+          { k: "z5", t: "number", label: "Zona 5 mulai", min: 30, max: 219, val: function (s) { return s.z.zones[4]; } },
+          { k: "warnOn", t: "check", label: "Alarm batas detak saat latihan", val: function (s) { return s.z.warningEnabled; } },
+          { k: "warnAt", t: "number", label: "Batas alarm (bpm)", min: 100, max: 219, val: function (s) { return s.z.warningLimit; } }
+        ],
+        pack: function (v) {
+          return { method: v.method, maxHr: v.maxHr, restingHr: v.restingHr, zones: [v.z1, v.z2, v.z3, v.z4, v.z5],
+                   warningEnabled: v.warnOn, warningLimit: v.warnAt };
+        },
+        btn: "Simpan zona", m: "setHeartRateZones", reload: true,
+        done: function (s, r) { return r && r.sent ? "Zona tersimpan dan dikirim ke jam." : "Zona tersimpan. Dikirim saat jam tersambung."; } },
+      { t: "button", need: ["z"], plain: true, vis: function (s) { return !!s.z.configured; }, label: "Kembali ke zona bawaan",
+        m: "setHeartRateZones", args: [null], reload: true, done: "Zona kembali ke bawaan." },
+
+      { t: "select", need: ["lg"], label: "Bahasa di jam", hint: "Otomatis mengikuti bahasa HP.",
+        val: function (s) { return s.lg.language || "auto"; },
+        opts: [["auto", "Otomatis"], ["id", "Indonesia"], ["en", "English"]], nul: "auto", m: "setWatchLanguage", reload: true,
+        done: function (s, r) { return r && r.took ? "Bahasa dikirim ke jam." : "Bahasa tersimpan. Dikirim saat jam tersambung."; } },
+
+      { t: "button", plain: true, label: "Baca baterai jam", m: "refreshBattery", timeout: 30000,
+        done: function (s, r) { return "Baterai jam: " + (r && r.level != null ? r.level + "%" : "tidak terbaca") + "."; } },
+      { t: "button", plain: true, label: "Sinkron seluruh riwayat", hint: "Mengambil ulang semua data dari jam. Bisa lama.",
+        m: "syncFullHistory", timeout: 900000, done: "Sinkron riwayat selesai." },
+      { t: "switch", need: ["fb"], label: "Paksa Bluetooth LE", hint: "Untuk uji sambungan. Berlaku di sambungan berikutnya.",
+        val: function (s) { return s.fb; }, m: "setForceBle", reload: true },
+
+      { t: "report", label: "Laporan dukungan",
+        hint: "Isi: tipe jam, perintah yang didukung, dan log sambungan. Alamat Bluetooth dan nomor seri dibuang." },
+
+      { t: "button", plain: true, danger: true, label: "Lupakan jam ini", confirm: "Ketuk lagi untuk melupakan jam",
+        hint: "Menghapus jam yang diingat. Hubungkan ulang lewat Koneksi jam.", m: "forgetDevice", done: "Jam dilupakan." }
+    ]
+  },
+  {
     id: "cuaca", title: "Cuaca",
     sub: "Prakiraan cuaca yang dikirim ke jam.",
     load: { w: "getWeatherStatus" },
@@ -186,7 +267,7 @@ var G = [
   {
     id: "notifikasi", title: "Notifikasi dan panggilan",
     sub: "Apa yang diteruskan dari HP ke jam.",
-    load: { n: "getNotificationAccess", ph: "getPhoneFeatures" },
+    load: { n: "getNotificationAccess", ph: "getPhoneFeatures", ms: "getMorningSummaryEnabled" },
     items: [
       { t: "note", need: ["n"], text: function (s) { return s.n.granted ? "Akses notifikasi sudah diizinkan." : "Akses notifikasi belum diizinkan."; } },
       { t: "button", need: ["n"], plain: true, vis: function (s) { return !s.n.granted; }, label: "Buka izin notifikasi", m: "openNotificationAccess" },
@@ -194,9 +275,8 @@ var G = [
       { t: "switch", need: ["ph"], label: "Cari HP dari jam", val: function (s) { return s.ph.findPhoneEnabled; }, m: "setFindPhoneEnabled", into: "ph" },
       { t: "switch", need: ["ph"], label: "Tampilkan panggilan masuk di jam", hint: "Meminta izin telepon.",
         val: function (s) { return s.ph.callsEnabled; }, m: "setCallsEnabled", into: "ph" },
-      { t: "buttons", label: "Ringkasan pagi", hint: "Statusnya belum bisa dibaca dari jam, jadi pilih salah satu.", list: [
-        { label: "Nyalakan", m: "setMorningSummaryEnabled", args: [true], done: "Ringkasan pagi dinyalakan." },
-        { label: "Matikan", m: "setMorningSummaryEnabled", args: [false], done: "Ringkasan pagi dimatikan." } ] }
+      { t: "switch", need: ["ms"], label: "Ringkasan pagi", hint: "Ringkasan hari ini muncul di notifikasi setelah sinkron berikutnya.",
+        val: function (s) { return s.ms; }, m: "setMorningSummaryEnabled", reload: true }
     ]
   },
   {
@@ -256,12 +336,14 @@ function usable(it) {
 function save(g, it, vals) {
   if (busy) return Promise.resolve();
   setBusy(true);
+  var got;
   return rn(it.m, (it.pre || []).concat(it.args || [], vals), it.timeout)
     .then(function (res) {
+      got = res;
       if (it.into && res && typeof res === "object") S[it.into] = res;
       if (it.reload || (it.into && !(res && typeof res === "object"))) return loadData(g);
     })
-    .then(function () { toast(txt(it.done) || "Tersimpan."); })
+    .then(function () { toast((typeof it.done === "function" ? it.done(S, got) : it.done) || "Tersimpan."); })
     .catch(function (e) { toast(e.message, true); })
     .then(function () { setBusy(false); if (cur === g.id) renderGroup(g); });
 }
@@ -289,7 +371,11 @@ var KIND = {
     it.opts.forEach(function (o) {
       var op = el("option", "", o[1]); op.value = String(o[0]); if (String(o[0]) === now) op.selected = true; sel.appendChild(op);
     });
-    sel.onchange = function () { save(g, it, [it.num ? Number(sel.value) : sel.value]); };
+    sel.onchange = function () {
+      var v = it.num ? Number(sel.value) : sel.value;
+      if (it.nul !== undefined && v === it.nul) v = null;
+      save(g, it, [v]);
+    };
     row.appendChild(labelBox(it)); row.appendChild(sel);
     return row;
   },
@@ -325,8 +411,15 @@ var KIND = {
   },
   button: function (g, it) {
     var row = el("div", "row col");
-    var b = el("button", "btn" + (it.plain ? " g" : ""), txt(it.label)); b.type = "button";
-    b.onclick = function () { save(g, it, []); };
+    var b = el("button", "btn" + (it.danger ? " dg" : it.plain ? " g" : ""), txt(it.label)); b.type = "button";
+    b.onclick = function () {
+      if (it.confirm && !b.dataset.armed) {
+        b.dataset.armed = "1"; b.textContent = it.confirm;
+        setTimeout(function () { if (b.isConnected) { delete b.dataset.armed; b.textContent = txt(it.label); } }, 5000);
+        return;
+      }
+      save(g, it, []);
+    };
     row.appendChild(b);
     var h = txt(it.hint);
     if (h) row.appendChild(el("small", "", h)).style.color = "var(--mt)";
@@ -342,6 +435,71 @@ var KIND = {
       box.appendChild(b);
     });
     row.appendChild(box);
+    return row;
+  },
+  form: function (g, it) {
+    var row = el("div", "row col");
+    row.appendChild(labelBox(it));
+    var box = el("div", "frm"), ctl = {};
+    it.fields.forEach(function (f) {
+      var line = el("label", "fld"), c;
+      line.appendChild(el("span", "", f.label));
+      if (f.t === "select") {
+        c = el("select");
+        var now = String(f.val(S));
+        f.opts.forEach(function (o) { var op = el("option", "", o[1]); op.value = String(o[0]); if (String(o[0]) === now) op.selected = true; c.appendChild(op); });
+      } else if (f.t === "check") {
+        c = el("input"); c.type = "checkbox"; c.setAttribute("role", "switch"); c.checked = !!f.val(S);
+      } else {
+        c = el("input"); c.type = "number"; c.inputMode = f.step && f.step < 1 ? "decimal" : "numeric";
+        c.step = f.step || 1; c.min = f.min; c.max = f.max; c.value = f.val(S);
+      }
+      c.setAttribute("aria-label", f.label);
+      ctl[f.k] = c; line.appendChild(c); box.appendChild(line);
+    });
+    row.appendChild(box);
+    var b = el("button", "btn", it.btn || "Simpan"); b.type = "button";
+    b.onclick = function () {
+      var v = {};
+      for (var i = 0; i < it.fields.length; i++) {
+        var f = it.fields[i], c = ctl[f.k];
+        if (f.t === "select") { v[f.k] = c.value; continue; }
+        if (f.t === "check") { v[f.k] = c.checked; continue; }
+        var raw = c.value.trim(), n = Number(raw);
+        var whole = !(f.step && f.step < 1);
+        if (raw === "" || !isFinite(n) || (whole && Math.floor(n) !== n) || n < f.min || n > f.max) {
+          toast(f.label + ": isi angka " + (whole ? "bulat " : "") + f.min + " sampai " + f.max + ".", true); c.focus(); return;
+        }
+        v[f.k] = n;
+      }
+      save(g, it, [it.pack(v)]);
+    };
+    row.appendChild(b);
+    return row;
+  },
+  report: function (g, it) {
+    var row = el("div", "row col");
+    row.appendChild(labelBox(it));
+    var box = el("div", "btns");
+    var mk = el("button", "btn", "Buat laporan"); mk.type = "button";
+    var cp = el("button", "btn g", "Salin"); cp.type = "button"; cp.style.display = "none";
+    var ta = el("textarea"); ta.readOnly = true; ta.style.display = "none"; ta.setAttribute("aria-label", "Isi laporan dukungan");
+    mk.onclick = function () {
+      mk.disabled = true;
+      rn("getSupportReport", [], 30000).then(function (r) {
+        ta.value = r.summary + "\n\n" + r.log; ta.style.display = "block"; cp.style.display = "";
+        toast("Laporan dibuat.");
+      }).catch(function (e) { toast(e.message, true); }).then(function () { mk.disabled = false; });
+    };
+    cp.onclick = function () {
+      ta.focus(); ta.select(); ta.setSelectionRange(0, ta.value.length);
+      var ok = function () { toast("Laporan disalin."); };
+      var no = function () { toast("Tidak bisa menyalin. Tahan teks, pilih semua, lalu salin.", true); };
+      var legacy = function () { var d = false; try { d = document.execCommand("copy"); } catch (e) {} if (d) ok(); else no(); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(ok, legacy); else legacy();
+    };
+    box.appendChild(mk); box.appendChild(cp);
+    row.appendChild(box); row.appendChild(ta);
     return row;
   },
   note: function (g, it) {
