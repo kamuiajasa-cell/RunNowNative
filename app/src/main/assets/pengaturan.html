@@ -80,6 +80,9 @@ font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;resize:vertical}
 input[type=time]{flex:none;min-height:46px;padding:9px 12px;border:1.5px solid var(--ln);border-radius:14px;background:var(--bg);font-weight:600}
 textarea.pl{font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;min-height:150px}
 
+.stp{display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid var(--ln);border-radius:14px;background:var(--bg)}
+.grp{display:flex;flex-direction:column;gap:8px;padding:10px;border:1.5px solid var(--ln);border-radius:16px}
+.stp .inline select{flex:1;min-width:0}
 #m.busy .row,#m.busy .go{opacity:.6;pointer-events:none}
 #toast{position:fixed;left:14px;right:14px;bottom:calc(16px + env(safe-area-inset-bottom,0px));max-width:532px;margin:0 auto;z-index:20;
 padding:12px 16px;border-radius:14px;background:var(--tx);color:var(--bg);font-size:14px;font-weight:600;display:none}
@@ -165,7 +168,155 @@ window.__hrvTick = function (n) {
                      Tiap saklar disimpan sendiri tanpa memuat ulang halaman.
      t: "lines"     kotak teks, satu isi per baris, dikirim sebagai satu daftar. val:(s)=>daftar; max, len (angka atau fungsi (s)); ph, btn
      t: "alarms"    editor alarm jam (5 slot + alarm pintar). src: kunci load berisi hasil getAlarms; m: setAlarms; into: kunci yang sama
+   Tambahan langkah 6:
+     t: "agps"      status data satelit dengan tombol Perbarui dan Batal; memantau getAgps tiap detik sendiri (tidak lewat save, supaya Batal bisa diketuk). src: kunci load berisi getAgps
+     t: "course"    editor program lari (grup, langkah, target, usaha); draf disimpan di localStorage[\"rn_course_draft\"]. m: pushRunningCourse; timeout; done
+     text: val      isi awal kotak teks (fungsi (s) => teks)
 */
+/* ---------- Langkah 6: pembantu data satelit (A-GPS) ---------- */
+var AGPS_TXT = {
+  never: "Jam belum pernah mengambil data satelit dari aplikasi ini.",
+  delivered: "Jam sudah punya data satelit terbaru.",
+  deliveredLab: "Jam sudah menerima data satelit eksperimen (HW_AGNSS). Belum terbukti dipakai jam; catat waktu GPS menemukan posisi.",
+  deliveredPgnss: "Jam sudah menerima data satelit prediksi eksperimen (HW_PGNSS_PRED, 3 hari). Belum terbukti dipakai jam; catat waktu GPS menemukan posisi.",
+  expired: "Data satelit di jam sudah kedaluwarsa. Ketuk Perbarui sekarang.",
+  stored: "Data sudah diunduh ke HP ini. Data dikirim ke jam saat jam terhubung dan memintanya.",
+  watchSilent: "Data sudah siap di HP ini, tetapi jam tidak menanggapi. Data dikirim saat jam memintanya.",
+  noNetwork: "HP ini tidak punya internet. Coba lagi saat sudah tersambung.",
+  downloadFailed: "Data satelit gagal diunduh.",
+  invalidFile: "Yang terunduh bukan data satelit yang valid, jadi tidak dikirim ke jam.",
+  unsupported: "Jam butuh data satelit yang hanya bisa disiapkan aplikasi Huawei sendiri, dan aplikasi ini tidak bisa menyediakannya.",
+  watchRefused: "Jam tidak ikut dalam pertukaran ini. Pembaruan dimulai dari jam sendiri.",
+  timeout: "Pengiriman ke jam berhenti di tengah jalan, jadi dibatalkan.",
+  cancelled: "Pembaruan dibatalkan.",
+  busy: "Pembaruan sedang berjalan.",
+  linkLost: "Koneksi ke jam terputus saat pembaruan.",
+  asking: "Menanyakan jam\u2026",
+  downloading: "Mengunduh data satelit\u2026",
+  waiting: "Data siap, menunggu jam mengambilnya\u2026",
+  sending: "Mengirim ke jam\u2026"
+};
+var AGPS_OUT = {
+  none: ["never", "info"], delivered: ["delivered", "ok"], stored: ["stored", "info"], watch_silent: ["watchSilent", "info"],
+  no_network: ["noNetwork", "danger"], download_failed: ["downloadFailed", "danger"], invalid_file: ["invalidFile", "danger"],
+  unsupported: ["unsupported", "info"], watch_refused: ["watchRefused", "danger"], timeout: ["timeout", "danger"],
+  cancelled: ["cancelled", "info"], busy: ["busy", "info"], link_lost: ["linkLost", "danger"]
+};
+/* Sama dengan agpsView() di JoyoFit (features/device/agps.ts), tanpa bagian yang menyembunyikan baris. */
+function agpsView(a, now) {
+  var busy = a.phase !== "idle";
+  function deliveredKey(src) { return src === "joyofit_rtcm" ? "deliveredLab" : src === "joyofit_pgnss" ? "deliveredPgnss" : "delivered"; }
+  var expired = a.expiresAt > 0 && now >= a.expiresAt;
+  var labDel = ((a.deliveredSource === "joyofit_rtcm" && a.labAgnss) || (a.deliveredSource === "joyofit_pgnss" && a.labPgnss)) &&
+    a.deliveredAt > 0 && (a.expiresAt === 0 || now < a.expiresAt);
+  var key, tone;
+  if (busy) {
+    key = { asking: "asking", downloading: "downloading", waiting: "waiting", sending: "sending" }[a.phase] || "asking"; tone = "info";
+  } else if (expired && (a.outcome === "delivered" || a.outcome === "none")) {
+    key = "expired"; tone = "danger";
+  } else if (a.outcome === "unsupported" && labDel) {
+    key = deliveredKey(a.deliveredSource); tone = "ok";
+  } else {
+    var k = AGPS_OUT[a.outcome] || AGPS_OUT.none;
+    key = k[0] === "delivered" ? deliveredKey(a.deliveredSource) : k[0]; tone = k[1];
+  }
+  var size = a.deliveredSize > 0 ? a.deliveredSize : a.cachedSize;
+  return {
+    busy: busy, key: key, tone: tone,
+    text: AGPS_TXT[key] + (tone === "danger" && a.error ? " " + a.error : ""),
+    last: a.deliveredAt > 0 ? new Date(a.deliveredAt).toLocaleString("id-ID") : "belum pernah",
+    kb: size > 0 ? Math.max(1, Math.round(size / 1024)) + " KB" : "-",
+    phone: a.cachedAt > 0 ? new Date(a.cachedAt).toLocaleString("id-ID") : "-",
+    asked: a.lastAskAt > 0 ? (a.lastAskTags ? String(a.lastAskTags).split(",").join(", ") : "v" + a.lastAskVersion) : "belum ada",
+    retry: !busy && a.retryAt > now ? new Date(a.retryAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : ""
+  };
+}
+function agoText(ms) {
+  if (!ms) return "belum";
+  var m = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  return m < 1 ? "baru saja" : m < 90 ? m + " menit lalu" : m < 2880 ? Math.round(m / 60) + " jam lalu" : Math.round(m / 1440) + " hari lalu";
+}
+
+/* ---------- Langkah 6: draf program lari (disimpan di HP, kunci sendiri) ---------- */
+var CD_KEY = "rn_course_draft";
+var CD = null;
+function cdStep(o) {
+  var s = { kind: "run", target: "time", a: "5", b: "0", unit: "km", intensity: "none", p1: "", p2: "", p3: "", p4: "", lo: "", hi: "" };
+  for (var k in o) s[k] = o[k];
+  return s;
+}
+function cdLoad() {
+  if (CD) return CD;
+  try { var j = JSON.parse(localStorage.getItem(CD_KEY) || "null"); if (j && typeof j.name === "string" && Array.isArray(j.blocks)) CD = j; } catch (e) {}
+  return CD || (CD = { name: "", blocks: [] });
+}
+function cdSave() { try { localStorage.setItem(CD_KEY, JSON.stringify(CD)); } catch (e) {} }
+var CD_PRESETS = {
+  easy: function () {
+    return { name: "Santai 20 mnt", blocks: [
+      { repeat: 1, steps: [cdStep({ kind: "warmup", a: "5" })] },
+      { repeat: 1, steps: [cdStep({ kind: "run", a: "20" })] },
+      { repeat: 1, steps: [cdStep({ kind: "cooldown", a: "5" })] }] };
+  },
+  intervals: function () {
+    return { name: "Interval", blocks: [
+      { repeat: 1, steps: [cdStep({ kind: "warmup", a: "10" })] },
+      { repeat: 6, steps: [cdStep({ kind: "run", target: "distance", a: "400", unit: "m", intensity: "pace", p1: "5", p2: "0", p3: "5", p4: "30" }),
+                           cdStep({ kind: "rest", a: "1", b: "30" })] },
+      { repeat: 1, steps: [cdStep({ kind: "cooldown", a: "5" })] }] };
+  }
+};
+/* Ubah draf menjadi argumen pushRunningCourse; mengembalikan {err} atau {course}. Batas sama dengan CourseProtobuf.validate di Kotlin. */
+function cdBuild(d) {
+  var name = (d.name || "").trim();
+  if (!name) return { err: "Beri nama pada program." };
+  if (unescape(encodeURIComponent(name)).length > 64) return { err: "Nama program terlalu panjang (paling banyak 64 byte)." };
+  if (!d.blocks.length) return { err: "Tambahkan minimal satu langkah." };
+  var count = 0, blocks = [];
+  function whole(t) { t = String(t).trim(); return /^\d{1,9}$/.test(t) ? Number(t) : null; }
+  function wholeOrZero(t) { return String(t).trim() === "" ? 0 : whole(t); }
+  for (var i = 0; i < d.blocks.length; i++) {
+    var b = d.blocks[i], steps = [], lb = "Grup " + (i + 1);
+    if (!b.steps.length) return { err: lb + ": tambahkan langkah ke grup ini." };
+    if (!(b.repeat >= 1 && b.repeat <= 99)) return { err: lb + ": grup diulang 1 sampai 99 kali." };
+    count += b.steps.length;
+    if (count > 100) return { err: "Program paling banyak punya 100 langkah." };
+    for (var j = 0; j < b.steps.length; j++) {
+      var s = b.steps[j], at = lb + ", langkah " + (j + 1) + ": ";
+      var tv = 0, low = 0, high = 0;
+      if (s.target === "time") {
+        var mi = wholeOrZero(s.a), se = wholeOrZero(s.b);
+        if (mi === null || se === null || se > 59) return { err: at + "detik 0 sampai 59, menit berupa bilangan bulat." };
+        tv = mi * 60 + se;
+        if (tv < 1 || tv > 86400) return { err: at + "target waktu 1 detik sampai 24 jam." };
+      } else if (s.target === "distance") {
+        var dv = Number(String(s.a).trim().replace(",", "."));
+        if (!/^(\d+\.?\d*|\.\d+)$/.test(String(s.a).trim().replace(",", "."))) return { err: at + "masukkan jarak sebagai angka." };
+        tv = Math.round(s.unit === "km" ? dv * 1000 : dv);
+        if (tv < 1 || tv > 100000) return { err: at + "target jarak 1 m sampai 100 km." };
+      }
+      if (s.intensity === "pace") {
+        var f1 = wholeOrZero(s.p1), f2 = wholeOrZero(s.p2), s1 = wholeOrZero(s.p3), s2 = wholeOrZero(s.p4);
+        if (f1 === null || f2 === null || s1 === null || s2 === null || f2 > 59 || s2 > 59) return { err: at + "detik kecepatan 0 sampai 59, menit berupa bilangan bulat." };
+        low = f1 * 60 + f2; high = s1 * 60 + s2;
+        if (low < 60 || low > 900 || high < 60 || high > 900) return { err: at + "batas kecepatan 1:00 sampai 15:00 per km." };
+        if (low > high) return { err: at + "kecepatan yang lebih cepat harus berupa waktu yang lebih kecil." };
+      } else if (s.intensity === "hrPercent" || s.intensity === "cadence") {
+        var lo = whole(s.lo), hi = whole(s.hi), hr = s.intensity === "hrPercent";
+        if (lo === null || hi === null) return { err: at + (hr ? "isi kedua batas detak jantung." : "isi kedua batas kadensi.") };
+        if (hr ? (lo < 20 || lo > 100 || hi < 20 || hi > 100) : (lo < 100 || lo > 300 || hi < 100 || hi > 300)) {
+          return { err: at + (hr ? "batas detak jantung 20 sampai 100 % dari maksimum." : "batas kadensi 100 sampai 300 langkah per menit.") };
+        }
+        if (lo > hi) return { err: at + (hr ? "detak jantung yang lebih rendah harus di depan." : "kadensi yang lebih rendah harus di depan.") };
+        low = lo; high = hi;
+      }
+      steps.push({ kind: s.kind, target: s.target, targetValue: tv, intensity: s.intensity, low: low, high: high });
+    }
+    blocks.push({ repeat: b.repeat, steps: steps });
+  }
+  return { course: { name: name, blocks: blocks } };
+}
+
 var mnt = function (n) { return n + " menit"; };
 var G = [
   {
@@ -338,6 +489,84 @@ var G = [
     ]
   },
   {
+    id: "gnss", title: "Data satelit (A-GPS)",
+    sub: "Data satelit supaya GPS jam cepat menemukan posisi.",
+    load: { ag: "getAgps" },
+    items: [
+      { t: "agps", need: ["ag"], src: "ag" },
+      { t: "switch", need: ["ag"], label: "HW_AGNSS dari JoyoFit (uji coba)",
+        hint: "Mati secara bawaan. Bila nyala dan jam meminta jenis HW_AGNSS, aplikasi mengirim data satelit yang dibuat server JoyoFit dari data siaran publik (IGS/BKG), bukan dari Huawei. HP mengambilnya tanpa data pribadi; server melihat alamat IP. Jam tidak memeriksa data ini, dan data yang salah pernah membuat GPS jam lain macet. Reset pabrik memulihkan jam. Belum terbukti di jam mana pun: nyalakan hanya untuk uji coba.",
+        val: function (s) { return s.ag.labAgnss; }, m: "setAgpsLab", into: "ag" },
+      { t: "switch", need: ["ag"], label: "HW_PGNSS_PRED dari JoyoFit (uji coba)",
+        hint: "Mati secara bawaan, terpisah dari saklar di atas. Bila nyala dan jam meminta jenis HW_PGNSS_PRED, aplikasi mengirim enam berkas prediksi orbit satelit untuk 3 hari yang dihitung server JoyoFit dari data publik (sekitar 800 KB). Lebih berisiko: prediksinya belum terverifikasi, jam menyimpannya berhari-hari tanpa memeriksa, dan data yang salah pernah membuat GPS jam lain macet. Reset pabrik memulihkan jam. Belum terbukti di jam mana pun: nyalakan hanya untuk uji coba.",
+        val: function (s) { return s.ag.labPgnss; }, m: "setAgpsPgnssLab", into: "ag" }
+    ]
+  },
+  {
+    id: "rute", title: "Rute di jam",
+    sub: "Kirim rute dari berkas GPX ke navigasi jam.",
+    load: { rt: "getRoutes" },
+    items: [
+      { t: "note", need: ["rt"], vis: function (s) { return !s.rt.p2p; }, warn: true,
+        text: "Jam belum tersambung atau tidak mendukung layanan P2P. Sambungkan jam, lalu buka layar ini lagi." },
+      { t: "note", need: ["rt"], vis: function (s) { return !!s.rt.p2p && !s.rt.deliver; }, warn: true,
+        text: "Jam ini tidak mengumumkan dukungan menerima rute dari HP (ExpandCapability 70). Pengiriman akan ditolak." },
+      { t: "note", need: ["rt"], vis: function (s) { return !!s.rt.p2p && !!s.rt.deliver; },
+        text: function (s) { return "Jam menerima rute dari HP" + (s.rt.altitude ? ", termasuk profil ketinggian." : ", tanpa profil ketinggian (garis biasa)."); } },
+      { t: "button", need: ["rt"], label: "Pilih berkas GPX", m: "pickRouteFile", reload: true, timeout: 300000,
+        hint: "Jalur (trk) dipakai bila ada, kalau tidak rute rencana (rte). Paling banyak 20 MB; titiknya dikurangi sesuai batas jam.",
+        done: function (s, r) { return r ? "Rute dibaca: " + r.points + " titik, " + r.distanceKm.toFixed(1) + " km." : "Rute dibaca."; } },
+      { t: "note", need: ["rt"], vis: function (s) { return !!s.rt.picked; },
+        text: function (s) {
+          var p = s.rt.picked;
+          return p.fileName + ": " + p.points + " titik, " + p.distanceKm.toFixed(2) + " km, " + (p.hasAltitude ? "dengan ketinggian." : "tanpa ketinggian.");
+        } },
+      { t: "text", need: ["rt"], vis: function (s) { return !!s.rt.picked; }, label: "Nama rute di jam",
+        hint: "Jam mendaftar rute menurut namanya, paling banyak 100 byte. Nama yang sama dengan rute di jam dianggap sudah ada.",
+        val: function (s) { return s.rt.picked.name; }, ph: "mis. Lari pagi", btn: "Kirim ke jam", m: "pushRoute", min: 1, max: 100, timeout: 180000,
+        done: function (s, r) {
+          if (r && r.alreadyOnWatch) return "Rute dengan nama ini sudah ada di jam.";
+          return "Rute dikirim (" + (r ? r.sentPoints : "?") + " titik). Cek di navigasi jam; belum diuji di jam asli.";
+        } }
+    ]
+  },
+  {
+    id: "kursus", title: "Program lari",
+    sub: "Susun program lari (pemanasan, interval, pendinginan) dan kirim ke jam.",
+    load: { c: "getCourses" },
+    items: [
+      { t: "note", warn: true, text: "Eksperimental: format berasal dari analisis Huawei Health dan belum terbukti di jam. Jam bisa menolaknya." },
+      { t: "switch", need: ["c"], label: "Nyalakan program lari", val: function (s) { return s.c.enabled; }, m: "setCoursesEnabled", into: "c" },
+      { t: "note", need: ["c"], vis: function (s) { return !!s.c.enabled; },
+        text: function (s) {
+          if (!s.c.p2p) return "Jam belum tersambung atau tidak mendukung layanan P2P. Sambungkan jam dulu.";
+          return (s.c.gate41 || s.c.gate169) ? "Gerbang Huawei: sudah diatur." : "Gerbang Huawei: belum diatur. Jam ini mungkin menolak program.";
+        } },
+      { t: "course", need: ["c"], vis: function (s) { return !!s.c.enabled; }, label: "Program",
+        hint: "Draf tersimpan di HP ini. Paling banyak 100 langkah.", m: "pushRunningCourse", timeout: 180000,
+        done: function (s, r) {
+          return "Program dikirim (status unggah " + (r && r.uploadStatus != null ? r.uploadStatus : "tidak ada") + ", jam " + (r && r.answered ? "menjawab" : "belum menjawab") + "). Cek di aplikasi lari jam.";
+        } }
+    ]
+  },
+  {
+    id: "hidup-sehat", title: "Healthy Living",
+    sub: "Tugas harian (cincin tujuan) di jam.",
+    load: { hl: "getHealthyLiving" },
+    items: [
+      { t: "switch", need: ["hl"], label: "Jawab permintaan jam", hint: "Menyalakan berlaku saat tersambung berikutnya; mematikan langsung berlaku.",
+        val: function (s) { return s.hl.enabled; }, m: "setHealthyLivingEnabled", into: "hl" },
+      { t: "note", need: ["hl"], text: function (s) {
+          var h = s.hl;
+          return (h.supported ? "Jam mendukung." : "Jam tidak mendukung atau belum tersambung.") + " Permintaan terakhir: " + agoText(h.lastRequestAt) +
+            (h.msgVer ? ". Versi pesan: " + h.msgVer : "") + (h.lastReport ? ". Laporan terakhir: " + h.lastReport : "") + "."; } },
+      { t: "note", need: ["hl"], text: function (s) { return s.hl.gate; } },
+      { t: "button", need: ["hl"], vis: function (s) { return !!s.hl.supported; }, label: "Kirim hari ini ke jam", m: "pushHealthyLiving", reload: true,
+        hint: "Mengirim tugas hari ini tanpa menunggu permintaan jam. Belum terverifikasi di jam.",
+        done: function (s, r) { return r && r.sent ? "Terkirim. Buka Healthy Living di jam untuk memeriksa." : "Jam belum meminta tugas. Buka Healthy Living di jam sekali."; } }
+    ]
+  },
+  {
     id: "kesehatan", title: "Sensor kesehatan",
     sub: "Pengukuran otomatis di jam dan batas detak jantung.",
     load: { h: "getHealthSensors", st: "getStressStatus" },
@@ -458,6 +687,7 @@ var KIND = {
     row.appendChild(labelBox(it));
     var line = el("div", "inline");
     var inp = el("input"); inp.type = "text"; inp.placeholder = it.ph || ""; inp.autocomplete = "off"; inp.setAttribute("aria-label", txt(it.label));
+    if (it.val) inp.value = it.val(S) || "";
     var b = el("button", "btn sm", it.btn || "Simpan"); b.type = "button";
     b.onclick = function () {
       var v = inp.value.trim();
@@ -710,6 +940,150 @@ var KIND = {
     var foot = el("div", "row col"); foot.appendChild(sv); wrap.appendChild(foot);
     draw();
     return wrap;
+  },
+  agps: function (g, it) {
+    var a = S[it.src], row = el("div", "row col"), timer = 0, running = false;
+    var head = el("div", "lb");
+    var status = el("div", "note"), l1 = el("small"), l2 = el("small"), l3 = el("small"), l4 = el("small");
+    [l1, l2, l3, l4].forEach(function (x) { x.style.display = "block"; x.style.color = "var(--mt)"; });
+    status.style.padding = "10px 12px"; status.style.border = "0"; status.style.borderRadius = "12px"; status.style.background = "var(--el)";
+    var bar = el("div", "btns");
+    var up = el("button", "btn", "Perbarui sekarang"), cn = el("button", "btn g", "Batal");
+    up.type = "button"; cn.type = "button";
+    head.appendChild(el("b", "", "Data satelit di jam"));
+    function paint() {
+      var v = agpsView(a, Date.now());
+      status.textContent = v.text + (v.retry ? " Percobaan otomatis berikutnya sekitar " + v.retry + "." : "");
+      status.style.color = v.tone === "danger" ? "var(--bad)" : v.tone === "ok" ? "var(--ok)" : "var(--tx)";
+      l1.textContent = "Terakhir diperbarui: " + v.last;
+      l2.textContent = "Ukuran: " + v.kb + ". Salinan di HP: " + v.phone;
+      l3.textContent = "Yang diminta jam: " + v.asked;
+      up.disabled = v.busy && !running;
+      cn.style.display = v.busy ? "" : "none";
+    }
+    function poll() {
+      if (!row.isConnected || cur !== g.id) { clearInterval(timer); timer = 0; return; }
+      rn("getAgps").then(function (x) {
+        a = S[it.src] = x; paint();
+        if (!running && x.phase === "idle") { clearInterval(timer); timer = 0; }
+      }).catch(function () {});
+    }
+    up.onclick = function () {
+      running = true; paint();
+      if (!timer) timer = setInterval(poll, 1000);
+      rn("refreshAgps", [], 180000).then(function (r) {
+        toast(r && r.outcome === "delivered" ? "Data satelit diterima jam." : "Selesai: " + (AGPS_TXT[(AGPS_OUT[r && r.outcome] || AGPS_OUT.none)[0]] || ""));
+      }).catch(function (e) { toast(e.message, true); }).then(function () { running = false; poll(); });
+    };
+    cn.onclick = function () { rn("cancelAgps").then(poll).catch(function (e) { toast(e.message, true); }); };
+    bar.appendChild(up); bar.appendChild(cn);
+    row.appendChild(head); row.appendChild(status); row.appendChild(l1); row.appendChild(l2); row.appendChild(l3);
+    row.appendChild(bar);
+    var d = el("small", "", "Jam memakai data satelit supaya GPS cepat menemukan posisi. Datanya berlaku sekitar 7 hari. Bila jam meminta jenis Broadcom, aplikasi mengunduhnya dari server publik Broadcom tanpa akun lalu memberikannya ke jam. Jenis lain hanya disiapkan aplikasi Huawei sendiri; aplikasi ini tidak pernah mengirim sesuatu yang tidak diminta jam.");
+    d.style.color = "var(--mt)"; row.appendChild(d);
+    paint();
+    if (a.phase !== "idle") timer = setInterval(poll, 1000);
+    return row;
+  },
+  course: function (g, it) {
+    var d = cdLoad(), row = el("div", "row col"), box = el("div", "frm");
+    var KINDS = [["warmup", "Pemanasan"], ["run", "Lari"], ["walk", "Jalan"], ["rest", "Istirahat"], ["cooldown", "Pendinginan"]];
+    var TARGETS = [["time", "Waktu"], ["distance", "Jarak"], ["none", "Tidak ada"]];
+    var INTENS = [["none", "Tidak ada"], ["pace", "Kecepatan"], ["hrPercent", "Detak jantung"], ["cadence", "Kadensi"]];
+    row.appendChild(labelBox(it));
+    function sel(opts, v, on, label) {
+      var c = el("select"); c.setAttribute("aria-label", label);
+      opts.forEach(function (o) { var op = el("option", "", o[1]); op.value = o[0]; if (o[0] === v) op.selected = true; c.appendChild(op); });
+      c.onchange = function () { on(c.value); };
+      return c;
+    }
+    function num(v, on, label, dec) {
+      var c = el("input"); c.type = "number"; c.inputMode = dec ? "decimal" : "numeric"; c.min = 0; if (dec) c.step = "any";
+      c.value = v; c.setAttribute("aria-label", label);
+      c.oninput = function () { on(c.value); cdSave(); };
+      return c;
+    }
+    function fld(label, c) { var l = el("label", "fld"); l.appendChild(el("span", "", label)); l.appendChild(c); return l; }
+    function mini(text, label, on) {
+      var b = el("button", "btn g sm", text); b.type = "button"; b.setAttribute("aria-label", label); b.style.minWidth = "44px"; b.style.padding = "8px";
+      b.onclick = on; return b;
+    }
+    function redraw() { cdSave(); box.textContent = ""; draw(); }
+    function drawStep(b, bi, si) {
+      var s = b.steps[si], card = el("div", "stp"), head = el("div", "inline");
+      var lbl = "Grup " + (bi + 1) + ", langkah " + (si + 1);
+      head.appendChild(sel(KINDS, s.kind, function (v) { s.kind = v; cdSave(); }, "Jenis " + lbl));
+      if (si > 0) head.appendChild(mini("\u2191", "Naikkan " + lbl, function () { var x = b.steps.splice(si, 1)[0]; b.steps.splice(si - 1, 0, x); redraw(); }));
+      if (si < b.steps.length - 1) head.appendChild(mini("\u2193", "Turunkan " + lbl, function () { var x = b.steps.splice(si, 1)[0]; b.steps.splice(si + 1, 0, x); redraw(); }));
+      head.appendChild(mini("\u2715", "Hapus " + lbl, function () { b.steps.splice(si, 1); if (!b.steps.length) d.blocks.splice(bi, 1); redraw(); }));
+      card.appendChild(head);
+      card.appendChild(fld("Berakhir setelah", sel(TARGETS, s.target, function (v) {
+        s.target = v; if (v === "time") { s.a = "5"; s.b = "0"; } else if (v === "distance") { s.a = "1"; s.unit = "km"; } redraw();
+      }, "Target " + lbl)));
+      if (s.target === "time") {
+        card.appendChild(fld("Menit", num(s.a, function (v) { s.a = v; }, "Menit " + lbl)));
+        card.appendChild(fld("Detik", num(s.b, function (v) { s.b = v; }, "Detik " + lbl)));
+      } else if (s.target === "distance") {
+        card.appendChild(fld("Jarak", num(s.a, function (v) { s.a = v; }, "Jarak " + lbl, true)));
+        card.appendChild(fld("Satuan", sel([["m", "Meter"], ["km", "Kilometer"]], s.unit, function (v) { s.unit = v; cdSave(); }, "Satuan " + lbl)));
+      }
+      card.appendChild(fld("Target usaha", sel(INTENS, s.intensity, function (v) { s.intensity = v; redraw(); }, "Target usaha " + lbl)));
+      if (s.intensity === "pace") {
+        card.appendChild(fld("Lebih cepat, mnt/km", num(s.p1, function (v) { s.p1 = v; }, "Cepat menit " + lbl)));
+        card.appendChild(fld("Lebih cepat, dtk", num(s.p2, function (v) { s.p2 = v; }, "Cepat detik " + lbl)));
+        card.appendChild(fld("Lebih lambat, mnt/km", num(s.p3, function (v) { s.p3 = v; }, "Lambat menit " + lbl)));
+        card.appendChild(fld("Lebih lambat, dtk", num(s.p4, function (v) { s.p4 = v; }, "Lambat detik " + lbl)));
+        card.appendChild(el("small", "", "Kecepatan per km, 1:00 sampai 15:00. Batas yang lebih cepat adalah waktu yang lebih kecil.")).style.color = "var(--mt)";
+      } else if (s.intensity === "hrPercent" || s.intensity === "cadence") {
+        var hr = s.intensity === "hrPercent";
+        card.appendChild(fld(hr ? "Rendah, % maks" : "Rendah, spm", num(s.lo, function (v) { s.lo = v; }, "Batas bawah " + lbl)));
+        card.appendChild(fld(hr ? "Tinggi, % maks" : "Tinggi, spm", num(s.hi, function (v) { s.hi = v; }, "Batas atas " + lbl)));
+        card.appendChild(el("small", "", hr ? "Persen dari detak jantung maksimum, 20 sampai 100." : "Langkah per menit, 100 sampai 300.")).style.color = "var(--mt)";
+      }
+      return card;
+    }
+    function draw() {
+      var pre = el("div", "btns");
+      var p1 = el("button", "btn g", "Preset: Santai 20 mnt"), p2 = el("button", "btn g", "Preset: Interval");
+      p1.type = p2.type = "button";
+      p1.onclick = function () { CD = d = CD_PRESETS.easy(); redraw(); toast("Draf diganti preset."); };
+      p2.onclick = function () { CD = d = CD_PRESETS.intervals(); redraw(); toast("Draf diganti preset."); };
+      pre.appendChild(p1); pre.appendChild(p2); box.appendChild(pre);
+      var nm = el("input"); nm.type = "text"; nm.placeholder = "Nama program (tampil di jam)"; nm.value = d.name; nm.autocomplete = "off";
+      nm.setAttribute("aria-label", "Nama program"); nm.oninput = function () { d.name = nm.value; cdSave(); };
+      box.appendChild(nm);
+      d.blocks.forEach(function (b, bi) {
+        var grp = el("div", "grp");
+        var top = el("div", "inline");
+        top.appendChild(el("b", "", "Grup " + (bi + 1)));
+        var rp = el("input"); rp.type = "number"; rp.inputMode = "numeric"; rp.min = 1; rp.max = 99; rp.value = b.repeat; rp.style.width = "72px";
+        rp.setAttribute("aria-label", "Ulangi grup " + (bi + 1));
+        rp.oninput = function () { var n = Number(rp.value); b.repeat = isFinite(n) && Math.floor(n) === n ? n : 0; cdSave(); };
+        var rl = el("span", "", "diulang"); rl.style.flex = "1"; rl.style.textAlign = "right"; rl.style.color = "var(--mt)"; rl.style.fontSize = "14px";
+        top.appendChild(rl); top.appendChild(rp); top.appendChild(el("span", "", "kali"));
+        grp.appendChild(top);
+        b.steps.forEach(function (s, si) { grp.appendChild(drawStep(b, bi, si)); });
+        var add = el("button", "btn g", "Tambah langkah ke grup ini"); add.type = "button";
+        add.onclick = function () { b.steps.push(cdStep({ kind: "run" })); redraw(); };
+        grp.appendChild(add);
+        box.appendChild(grp);
+      });
+      var nb = el("button", "btn g", "Tambah langkah"); nb.type = "button";
+      nb.onclick = function () { d.blocks.push({ repeat: 1, steps: [cdStep({ kind: "run" })] }); redraw(); };
+      var clr = el("button", "btn g", "Kosongkan draf"); clr.type = "button";
+      clr.onclick = function () { CD = d = { name: "", blocks: [] }; redraw(); };
+      var snd = el("button", "btn", "Kirim ke jam"); snd.type = "button";
+      snd.onclick = function () {
+        var r = cdBuild(d);
+        if (r.err) { toast(r.err, true); return; }
+        save(g, { m: it.m, timeout: it.timeout, done: it.done }, [r.course]);
+      };
+      var bt = el("div", "btns"); bt.appendChild(nb); bt.appendChild(clr);
+      box.appendChild(bt); box.appendChild(snd);
+    }
+    draw();
+    row.appendChild(box);
+    return row;
   },
   note: function (g, it) {
     return el("div", "note" + (it.warn ? " warn" : ""), txt(it.text));

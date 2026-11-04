@@ -60,6 +60,7 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
     addBasics(t)
     addWeather(t)
     addNotifications(t)
+    addLocation(t)
     addHealth(t)
     addScreens(t)
   }
@@ -378,6 +379,81 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
     }
   }
 
+  /** Lokasi dan rute: data satelit (A-GPS), program lari, rute di jam, Healthy Living. */
+  private fun addLocation(t: MutableMap<String, Rpc>) {
+    // Data satelit. refreshAgps menunggu sampai selesai (bisa lama); halaman memantau getAgps sambil menunggu.
+    t.m("getAgps") { runtime.ephemeris.status() }
+    t.m("refreshAgps") { runtime.ephemeris.refreshNow() }
+    t.m("cancelAgps") { runtime.ephemeris.cancel(); null }
+    t.m("setAgpsLab", BOOL) { a ->
+      runtime.ephemeris.setLabAgnss(a[0] as Boolean)
+      runtime.ephemeris.status()
+    }
+    t.m("setAgpsPgnssLab", BOOL) { a ->
+      runtime.ephemeris.setLabPgnss(a[0] as Boolean)
+      runtime.ephemeris.status()
+    }
+
+    // Program lari (eksperimental, mati secara bawaan).
+    t.m("getCourses") { runtime.p2p.coursesStatus() }
+    t.m("setCoursesEnabled", BOOL) { a ->
+      runtime.p2p.settings.experimentalCourses = a[0] as Boolean
+      runtime.p2p.coursesStatus()
+    }
+    t.m("pushRunningCourse", COURSE) { a ->
+      requireConnected()
+      val o = a[0] as JSONObject
+      val blocks = o.getJSONArray("blocks")
+      val converted = List(blocks.length()) { i ->
+        val b = blocks.getJSONObject(i)
+        val steps = b.getJSONArray("steps")
+        CourseBlock(
+          b.getInt("repeat"),
+          List(steps.length()) { j ->
+            val x = steps.getJSONObject(j)
+            CourseStep(
+              kind = CourseStepKind.of(x.getString("kind"))!!,
+              target = CourseTarget.of(x.getString("target"))!!,
+              targetValue = x.getInt("targetValue"),
+              intensity = CourseIntensity.of(x.getString("intensity"))!!,
+              low = x.getInt("low"),
+              high = x.getInt("high"),
+            )
+          },
+        )
+      }
+      // Id program buatan sendiri; jam hanya butuh teks unik yang stabil (sama dengan JoyoFit).
+      val id = "JF" + java.lang.Long.toString(System.currentTimeMillis(), 36).uppercase()
+      runtime.p2p.pushCourse(RunningCourse(id, o.getString("name").trim(), converted))
+    }
+
+    // Rute di jam. Beda dari JoyoFit: berkas dipilih lewat pickRouteFile (GPX), lalu pushRoute hanya menerima nama.
+    t.m("getRoutes") { runtime.p2p.routesStatus() + mapOf("picked" to pickedRouteInfo()) }
+    t.m("pickRouteFile") {
+      val file = pick("*/*")
+      val parsed = RouteGpx.parse(file.bytes)
+      pickedRoute = PickedRoute(file.name, parsed)
+      pickedRouteInfo()
+    }
+    t.m("pushRoute", text("Nama rute harus 1 sampai 100 huruf.", 1, 100)) { a ->
+      requireConnected()
+      val picked = pickedRoute ?: throw IllegalStateException("Pilih berkas GPX dulu.")
+      val name = truncateUtf8((a[0] as String).trim(), RouteFile.MAX_NAME_BYTES)
+      val track = RouteTrack(
+        java.util.UUID.randomUUID().toString(), name, picked.parsed.fixes, picked.parsed.hasAltitude, 0L,
+      )
+      runtime.p2p.pushRoute(track)
+    }
+
+    // Healthy Living.
+    t.m("getHealthyLiving") { runtime.p2p.healthLivingStatus() }
+    t.m("setHealthyLivingEnabled", BOOL) { a ->
+      runtime.p2p.setHealthLivingEnabled(a[0] as Boolean)
+      runtime.p2p.healthLivingStatus()
+    }
+    t.m("pushHealthyLiving") { mapOf("sent" to runtime.p2p.pushHealthLiving()) }
+  }
+
   /** Sensor kesehatan, stres, dan HRV. */
   private fun addHealth(t: MutableMap<String, Rpc>) {
     t.m("getHealthSensors") { runtime.healthSensorsStatus() }
@@ -454,8 +530,39 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
   private suspend fun bluetoothAllowed(): Boolean =
     Build.VERSION.SDK_INT < Build.VERSION_CODES.S || host.ask(listOf(Manifest.permission.BLUETOOTH_CONNECT))
 
-  /** Minta pengguna memilih berkas; untuk metode langkah 6 sampai 8 (kursus, rute, wajah jam, impor Huawei). */
-  @Suppress("unused")
+  /** Rute yang terakhir dipilih lewat pickRouteFile; hanya di memori, hilang saat aplikasi ditutup. */
+  private class PickedRoute(val fileName: String, val parsed: RouteGpx.Parsed)
+
+  @Volatile
+  private var pickedRoute: PickedRoute? = null
+
+  private fun pickedRouteInfo(): Map<String, Any?>? = pickedRoute?.let { p ->
+    mapOf(
+      "fileName" to p.fileName,
+      "name" to (p.parsed.name ?: p.fileName.substringBeforeLast('.')),
+      "points" to p.parsed.fixes.size,
+      "distanceKm" to p.parsed.distanceM / 1000.0,
+      "hasAltitude" to p.parsed.hasAltitude,
+    )
+  }
+
+  /** Potong [text] paling banyak [maxBytes] byte UTF-8, tidak di tengah huruf. */
+  private fun truncateUtf8(text: String, maxBytes: Int): String {
+    var bytes = 0
+    val out = StringBuilder()
+    var i = 0
+    while (i < text.length) {
+      val cp = text.codePointAt(i)
+      val size = when { cp < 0x80 -> 1; cp < 0x800 -> 2; cp < 0x10000 -> 3; else -> 4 }
+      if (bytes + size > maxBytes) break
+      bytes += size
+      out.appendCodePoint(cp)
+      i += Character.charCount(cp)
+    }
+    return out.toString().trim()
+  }
+
+  /** Minta pengguna memilih berkas; dipakai pickRouteFile (langkah 6) dan nanti wajah jam serta impor Huawei (langkah 7 dan 8). */
   private suspend fun pick(mime: String): PickedFile =
     host.pickFile(mime) ?: throw IllegalStateException("Pemilihan berkas dibatalkan.")
 
@@ -653,6 +760,62 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
     }
 
     val ALARMS = Rule { a -> alarmsProblem(a) }
+
+    private val COURSE_KINDS = setOf<Any?>("warmup", "run", "walk", "rest", "cooldown")
+    private val COURSE_TARGETS = setOf<Any?>("time", "distance", "none")
+    private val COURSE_INTENSITIES = setOf<Any?>("none", "pace", "hrPercent", "cadence")
+
+    /** Aturan sama dengan CourseProtobuf.validate(); pesannya untuk pengguna. */
+    fun courseProblem(a: List<Any?>): String? {
+      val o = a.singleOrNull() as? JSONObject ?: return "Program tidak valid."
+      val name = (o.opt("name") as? String)?.trim().orEmpty()
+      if (name.isEmpty()) return "Beri nama pada program."
+      if (name.toByteArray(Charsets.UTF_8).size > 64) return "Nama program terlalu panjang (paling banyak 64 byte)."
+      val blocks = o.optJSONArray("blocks") ?: return "Program tidak valid."
+      if (blocks.length() == 0) return "Tambahkan minimal satu langkah."
+      var count = 0
+      for (i in 0 until blocks.length()) {
+        val b = blocks.optJSONObject(i) ?: return "Program tidak valid."
+        val label = "Grup ${i + 1}"
+        if (!b.within("repeat", 1..99)) return "$label: grup diulang 1 sampai 99 kali."
+        val steps = b.optJSONArray("steps") ?: return "Program tidak valid."
+        if (steps.length() == 0) return "$label: tambahkan langkah ke grup ini."
+        count += steps.length()
+        if (count > 100) return "Program paling banyak punya 100 langkah."
+        for (j in 0 until steps.length()) {
+          val x = steps.optJSONObject(j) ?: return "Program tidak valid."
+          val where = "$label, langkah ${j + 1}"
+          if (x.opt("kind") !in COURSE_KINDS) return "$where: jenis langkah tidak dikenal."
+          val target = x.opt("target")
+          if (target !in COURSE_TARGETS) return "$where: jenis target tidak dikenal."
+          if (x.opt("intensity") !in COURSE_INTENSITIES) return "$where: target usaha tidak dikenal."
+          if (x.whole("targetValue") == null || x.whole("low") == null || x.whole("high") == null) return "$where: isi angka bulat."
+          when (target) {
+            "time" -> if (!x.within("targetValue", 1..86_400)) return "$where: target waktu 1 detik sampai 24 jam."
+            "distance" -> if (!x.within("targetValue", 1..100_000)) return "$where: target jarak 1 m sampai 100 km."
+          }
+          val lo = x.getInt("low")
+          val hi = x.getInt("high")
+          when (x.opt("intensity")) {
+            "pace" -> when {
+              !x.within("low", 60..900) || !x.within("high", 60..900) -> return "$where: batas kecepatan 1:00 sampai 15:00 per km."
+              lo > hi -> return "$where: kecepatan yang lebih cepat harus berupa waktu yang lebih kecil."
+            }
+            "hrPercent" -> when {
+              !x.within("low", 20..100) || !x.within("high", 20..100) -> return "$where: batas detak jantung 20 sampai 100 % dari maksimum."
+              lo > hi -> return "$where: detak jantung yang lebih rendah harus di depan."
+            }
+            "cadence" -> when {
+              !x.within("low", 100..300) || !x.within("high", 100..300) -> return "$where: batas kadensi 100 sampai 300 langkah per menit."
+              lo > hi -> return "$where: kadensi yang lebih rendah harus di depan."
+            }
+          }
+        }
+      }
+      return null
+    }
+
+    val COURSE = Rule { a -> courseProblem(a) }
 
     /** Daftar waktu mulai latihan (detik atau ms sesuai index.html), 1 sampai 200 angka. */
     val REFETCH = Rule { a ->
