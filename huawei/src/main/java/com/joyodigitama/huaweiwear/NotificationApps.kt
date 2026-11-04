@@ -20,7 +20,7 @@ import kotlinx.coroutines.coroutineScope
 internal object NotificationApps {
   private const val ICON_PX = 96
 
-  suspend fun list(context: Context, settings: WearSettings): List<Map<String, Any?>> = coroutineScope {
+  suspend fun list(context: Context, settings: WearSettings, icons: Boolean = true): List<Map<String, Any?>> = coroutineScope {
     val pm = context.packageManager
     val cache = AppIconCache(File(context.cacheDir, "notification-app-icons"))
     val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
@@ -42,7 +42,7 @@ internal object NotificationApps {
             "packageName" to packageName,
             "label" to label,
             "enabled" to enabled,
-            "iconUri" to iconUri(pm, cache, packageName),
+            "iconUri" to if (icons) iconUri(pm, cache, packageName) else null,
           )
         }
       }

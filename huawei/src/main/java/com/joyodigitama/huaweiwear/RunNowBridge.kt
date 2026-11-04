@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -277,12 +278,64 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
       runtime.features.settings.callsEnabled = a[0] as Boolean
       runtime.features.status()
     }
+    t.m("setCallControlEnabled", BOOL) { a ->
+      if (a[0] == true && !host.ask(listOf(Manifest.permission.ANSWER_PHONE_CALLS))) {
+        throw IllegalStateException("Izin menjawab panggilan belum diberikan.")
+      }
+      runtime.features.settings.callControlEnabled = a[0] as Boolean
+      runtime.features.status()
+    }
     t.m("setFindPhoneEnabled", BOOL) { a ->
       val on = a[0] as Boolean
       runtime.features.settings.findPhoneEnabled = on
       // Dimatikan saat sedang berbunyi: ponsel harus ikut diam.
       if (!on) runtime.features.stopFindPhone("Find my phone switched off")
       runtime.features.status()
+    }
+    // Cari jam dari HP: true membunyikan jam, false menghentikannya.
+    t.m("findWatch", BOOL) { a ->
+      requireConnected()
+      runtime.features.findWatch(a[0] as Boolean)
+      null
+    }
+
+    // Aplikasi yang notifikasinya diteruskan. Daftar tanpa ikon: halaman tidak bisa memuat berkas ikon, dan ikon memperlambat.
+    t.m("getNotificationApps") {
+      withContext(Dispatchers.IO) { NotificationApps.list(app, runtime.settings, icons = false) }
+    }
+    t.m("setNotificationAppEnabled", APP_CHOICE) { a ->
+      runtime.settings.setAppChoice(a[0] as String, a[1] as Boolean)
+      null
+    }
+
+    // Balasan cepat di jam. getQuickReplies = status dari JoyoFit ditambah isi tersimpan (replies), supaya isian bisa terisi.
+    t.m("getQuickReplies") {
+      runtime.p2p.quickRepliesStatus() + mapOf("replies" to (runtime.p2p.settings.quickReplies ?: emptyList()))
+    }
+    t.m("setQuickReplies", QUICK) { a ->
+      val arr = a[0] as JSONArray
+      val replies = List(arr.length()) { i -> arr.getString(i).trim() }
+      mapOf("sent" to runtime.p2p.setQuickReplies(replies))
+    }
+
+    // Alarm di jam. setAlarms mengirim PERSIS isi yang dikirim (slot yang tidak ada dihapus), jadi halaman wajib membaca dulu.
+    t.m("getAlarms") { runtime.features.cachedAlarms().toJs() }
+    t.m("refreshAlarms") {
+      requireConnected()
+      runtime.features.refreshAlarms().toJs()
+    }
+    t.m("setAlarms", ALARMS) { a ->
+      requireConnected()
+      val o = a[0] as JSONObject
+      val ev = o.getJSONArray("event")
+      val event = List(ev.length()) { i ->
+        val x = ev.getJSONObject(i)
+        WatchAlarm(x.getInt("slot"), x.getBoolean("enabled"), x.getInt("hour"), x.getInt("minute"), x.getInt("repeat"), x.getString("name"))
+      }
+      val smart = o.optJSONObject("smart")?.let { s ->
+        WatchSmartAlarm(s.getBoolean("enabled"), s.getInt("hour"), s.getInt("minute"), s.getInt("repeat"), s.getInt("aheadMinutes"))
+      }
+      runtime.features.setAlarms(WatchAlarms(event, smart, null)).toJs()
     }
   }
 
@@ -494,6 +547,73 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
         }
       }
     }
+
+    val PACKAGE_NAME = Regex("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+$")
+
+    /** (nama paket, nyala). */
+    val APP_CHOICE = Rule { a ->
+      val p = a.getOrNull(0)
+      when {
+        a.size != 2 -> "Metode ini menerima dua argumen."
+        p !is String || p.length > 255 || !PACKAGE_NAME.matches(p) -> "Nama paket tidak valid."
+        a[1] !is Boolean -> "Nilai harus benar atau salah."
+        else -> null
+      }
+    }
+
+    /** Satu argumen: daftar 1 sampai SLOTS balasan, tiap balasan satu baris, paling banyak MAX_LENGTH huruf. Sama dengan QuickRepliesPacket.problem(). */
+    val QUICK = Rule { a ->
+      val arr = a.singleOrNull() as? JSONArray
+      when {
+        arr == null -> "Daftar balasan tidak valid."
+        arr.length() !in 1..QuickRepliesPacket.SLOTS -> "Isi 1 sampai ${QuickRepliesPacket.SLOTS} balasan."
+        else -> {
+          var bad: String? = null
+          for (i in 0 until arr.length()) {
+            val s = (arr.opt(i) as? String)?.trim()
+            if (s.isNullOrEmpty()) { bad = "Balasan tidak boleh kosong."; break }
+            if ('\n' in s || '\r' in s) { bad = "Balasan harus satu baris."; break }
+            if (s.codePointCount(0, s.length) > QuickRepliesPacket.MAX_LENGTH) { bad = "Balasan paling panjang ${QuickRepliesPacket.MAX_LENGTH} huruf."; break }
+          }
+          bad
+        }
+      }
+    }
+
+    /** Aturan sama dengan AlarmSync.validate(); pesannya untuk pengguna. Hari: Senin = 1 sampai Minggu = 64. */
+    fun alarmsProblem(a: List<Any?>): String? {
+      val o = a.singleOrNull() as? JSONObject ?: return "Alarm tidak valid."
+      val ev = o.optJSONArray("event") ?: return "Daftar alarm tidak valid."
+      if (ev.length() > EVENT_ALARM_SLOTS) return "Jam hanya punya $EVENT_ALARM_SLOTS slot alarm."
+      val seen = HashSet<Int>()
+      for (i in 0 until ev.length()) {
+        val x = ev.optJSONObject(i) ?: return "Alarm tidak valid."
+        val slot = x.whole("slot")
+        when {
+          slot == null || slot !in 1..EVENT_ALARM_SLOTS -> return "Slot alarm harus 1 sampai $EVENT_ALARM_SLOTS."
+          !seen.add(slot) -> return "Slot alarm $slot dipakai dua kali."
+          x.opt("enabled") !is Boolean -> return "Status alarm harus benar atau salah."
+          !x.within("hour", 0..23) -> return "Jam alarm harus 0 sampai 23."
+          !x.within("minute", 0..59) -> return "Menit alarm harus 0 sampai 59."
+          !x.within("repeat", 0..ALARM_REPEAT_MAX) -> return "Hari ulang alarm tidak valid."
+          x.opt("name") !is String || x.getString("name").length > ALARM_NAME_MAX -> return "Nama alarm paling panjang $ALARM_NAME_MAX huruf."
+        }
+      }
+      val smart = o.optJSONObject("smart")
+      if (smart != null) {
+        when {
+          smart.opt("enabled") !is Boolean -> return "Status alarm pintar harus benar atau salah."
+          !smart.within("hour", 0..23) || !smart.within("minute", 0..59) -> return "Waktu alarm pintar tidak valid."
+          !smart.within("repeat", 0..ALARM_REPEAT_MAX) -> return "Hari ulang alarm pintar tidak valid."
+          !smart.within("aheadMinutes", 0..127) -> return "Jendela alarm pintar harus 0 sampai 127 menit."
+        }
+      } else if (o.has("smart") && !o.isNull("smart")) {
+        return "Alarm pintar tidak valid."
+      }
+      return null
+    }
+
+    val ALARMS = Rule { a -> alarmsProblem(a) }
 
     /** Daftar waktu mulai latihan (detik atau ms sesuai index.html), 1 sampai 200 angka. */
     val REFETCH = Rule { a ->

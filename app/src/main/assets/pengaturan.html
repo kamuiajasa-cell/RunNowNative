@@ -73,6 +73,12 @@ input[type=number],input[type=text]{width:100%}
 textarea{width:100%;min-height:170px;padding:9px 12px;border:1.5px solid var(--ln);border-radius:14px;background:var(--bg);
 font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;resize:vertical}
 .btns .btn{flex:1;min-width:120px}
+.days{display:flex;gap:4px;flex-wrap:wrap}
+.days button{min-width:40px;min-height:40px;padding:0 6px;border-radius:12px;border:1.5px solid var(--ln);background:var(--bg);font-weight:700;font-size:13px}
+.days button.on{background:var(--pr);color:var(--cd);border-color:var(--pr)}
+:root[data-theme=dark] .days button.on{color:var(--bg)}
+input[type=time]{flex:none;min-height:46px;padding:9px 12px;border:1.5px solid var(--ln);border-radius:14px;background:var(--bg);font-weight:600}
+textarea.pl{font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;min-height:150px}
 
 #m.busy .row,#m.busy .go{opacity:.6;pointer-events:none}
 #toast{position:fixed;left:14px;right:14px;bottom:calc(16px + env(safe-area-inset-bottom,0px));max-width:532px;margin:0 auto;z-index:20;
@@ -154,6 +160,11 @@ window.__hrvTick = function (n) {
      select: nul     nilai pilihan yang dikirim sebagai null (mis. "auto")
      button: confirm teks tombol pada ketukan pertama; perlu ketukan kedua dalam 5 detik; danger: tombol merah
      done            boleh fungsi (s, jawaban) => teks
+   Tambahan langkah 5:
+     t: "apps"      daftar aplikasi berisi saklar, dengan kotak cari. src: kunci load berisi [{packageName,label,enabled}]; m: metode (nama paket, nyala).
+                     Tiap saklar disimpan sendiri tanpa memuat ulang halaman.
+     t: "lines"     kotak teks, satu isi per baris, dikirim sebagai satu daftar. val:(s)=>daftar; max, len (angka atau fungsi (s)); ph, btn
+     t: "alarms"    editor alarm jam (5 slot + alarm pintar). src: kunci load berisi hasil getAlarms; m: setAlarms; into: kunci yang sama
 */
 var mnt = function (n) { return n + " menit"; };
 var G = [
@@ -267,7 +278,7 @@ var G = [
   {
     id: "notifikasi", title: "Notifikasi dan panggilan",
     sub: "Apa yang diteruskan dari HP ke jam.",
-    load: { n: "getNotificationAccess", ph: "getPhoneFeatures", ms: "getMorningSummaryEnabled" },
+    load: { n: "getNotificationAccess", ph: "getPhoneFeatures", ms: "getMorningSummaryEnabled", qr: "getQuickReplies" },
     items: [
       { t: "note", need: ["n"], text: function (s) { return s.n.granted ? "Akses notifikasi sudah diizinkan." : "Akses notifikasi belum diizinkan."; } },
       { t: "button", need: ["n"], plain: true, vis: function (s) { return !s.n.granted; }, label: "Buka izin notifikasi", m: "openNotificationAccess" },
@@ -275,8 +286,49 @@ var G = [
       { t: "switch", need: ["ph"], label: "Cari HP dari jam", val: function (s) { return s.ph.findPhoneEnabled; }, m: "setFindPhoneEnabled", into: "ph" },
       { t: "switch", need: ["ph"], label: "Tampilkan panggilan masuk di jam", hint: "Meminta izin telepon.",
         val: function (s) { return s.ph.callsEnabled; }, m: "setCallsEnabled", into: "ph" },
+      { t: "switch", need: ["ph"], label: "Terima dan tolak panggilan dari jam", hint: "Tombol di jam menjawab atau mengakhiri panggilan di HP. Meminta izin menjawab panggilan.",
+        val: function (s) { return s.ph.callControlEnabled; }, m: "setCallControlEnabled", into: "ph" },
+      { t: "note", need: ["ph"], warn: true, vis: function (s) { return s.ph.callControlEnabled && !s.ph.answerPhoneCalls; },
+        text: "Izin menjawab panggilan belum diberikan. Matikan lalu nyalakan lagi untuk memintanya." },
+      { t: "button", plain: true, label: "Pilih aplikasi yang diteruskan", hint: "Hanya aplikasi yang menyala yang notifikasinya dikirim ke jam.",
+        m: "openScreen", args: ["/settings/aplikasi"] },
+      { t: "note", need: ["qr"], vis: function (s) { return !s.qr.supported; },
+        text: "Jam belum tersambung atau tidak mendukung balasan cepat. Daftar tetap tersimpan dan dikirim bila jam mendukung." },
+      { t: "lines", need: ["qr"], label: "Balasan cepat",
+        hint: function (s) { return "Muncul di bawah tombol balas pada notifikasi di jam. Satu balasan per baris, paling banyak " + (s.qr.slots || 10) + " balasan dan " + (s.qr.maxLength || 30) + " huruf."; },
+        val: function (s) { return s.qr.replies || []; }, max: function (s) { return s.qr.slots || 10; }, len: function (s) { return s.qr.maxLength || 30; },
+        ph: "Siap, sebentar lagi\nNanti kuhubungi", btn: "Simpan balasan", m: "setQuickReplies", reload: true,
+        done: function (s, r) { return r && r.sent ? "Balasan cepat dikirim ke jam." : "Balasan cepat tersimpan. Dikirim saat jam tersambung."; } },
       { t: "switch", need: ["ms"], label: "Ringkasan pagi", hint: "Ringkasan hari ini muncul di notifikasi setelah sinkron berikutnya.",
         val: function (s) { return s.ms; }, m: "setMorningSummaryEnabled", reload: true }
+    ]
+  },
+  {
+    id: "aplikasi", title: "Aplikasi notifikasi",
+    sub: "Pilih aplikasi yang notifikasinya diteruskan ke jam.",
+    load: { ap: "getNotificationApps", n: "getNotificationAccess" },
+    items: [
+      { t: "note", warn: true, need: ["n"], vis: function (s) { return !s.n.enabled; },
+        text: "Teruskan notifikasi ke jam sedang mati. Nyalakan di Notifikasi dan panggilan." },
+      { t: "apps", need: ["ap"], src: "ap", label: "Aplikasi", hint: "Aplikasi sistem mengikuti aturan bawaan sampai kamu mengubahnya.", m: "setNotificationAppEnabled" }
+    ]
+  },
+  {
+    id: "alarm", title: "Alarm dan cari jam",
+    sub: "Alarm di jam dan membunyikan jam yang terselip.",
+    load: { al: "getAlarms", ph: "getPhoneFeatures" },
+    items: [
+      { t: "note", need: ["al"], warn: true, vis: function (s) { return !s.al.supported; },
+        text: "Jam belum tersambung atau tidak mendukung alarm dari aplikasi. Sambungkan jam, lalu buka layar ini lagi." },
+      { t: "button", need: ["al"], vis: function (s) { return !!s.al.supported; }, label: "Baca alarm dari jam", m: "refreshAlarms", into: "al", timeout: 30000,
+        hint: function (s) { return s.al.updatedAt ? "Terakhir dibaca " + new Date(s.al.updatedAt).toLocaleString("id-ID") + "." : "Baca dulu sebelum mengubah, supaya alarm yang sudah ada tidak terhapus."; },
+        done: "Alarm dibaca dari jam." },
+      { t: "alarms", need: ["al"], src: "al", vis: function (s) { return !!s.al.supported && !!s.al.updatedAt; },
+        m: "setAlarms", into: "al", timeout: 60000, done: "Alarm dikirim ke jam." },
+      { t: "note", need: ["ph"], vis: function (s) { return !s.ph.findWatchSupported; }, text: "Cari jam butuh jam yang tersambung dan mendukungnya." },
+      { t: "buttons", need: ["ph"], vis: function (s) { return !!s.ph.findWatchSupported; }, label: "Cari jam", hint: "Jam bergetar dan berbunyi.",
+        list: [{ label: "Bunyikan jam", m: "findWatch", args: [true], done: "Perintah dikirim ke jam." },
+               { label: "Hentikan", m: "findWatch", args: [false], done: "Perintah berhenti dikirim." }] }
     ]
   },
   {
@@ -501,6 +553,157 @@ var KIND = {
     box.appendChild(mk); box.appendChild(cp);
     row.appendChild(box); row.appendChild(ta);
     return row;
+  },
+  apps: function (g, it) {
+    var list = S[it.src] || [], wrap = el("div");
+    var head = el("div", "row col"), info = el("small", "");
+    info.style.color = "var(--mt)";
+    var q = el("input"); q.type = "text"; q.placeholder = "Cari aplikasi"; q.autocomplete = "off"; q.setAttribute("aria-label", "Cari aplikasi");
+    head.appendChild(labelBox(it)); head.appendChild(q); head.appendChild(info);
+    var box = el("div");
+    wrap.appendChild(head); wrap.appendChild(box);
+    function count() {
+      var n = 0; list.forEach(function (a) { if (a.enabled) n++; });
+      info.textContent = n + " dari " + list.length + " aplikasi diteruskan.";
+    }
+    function draw() {
+      var f = q.value.trim().toLowerCase(), shown = 0;
+      box.textContent = "";
+      list.forEach(function (a) {
+        if (f && (a.label + " " + a.packageName).toLowerCase().indexOf(f) < 0) return;
+        shown++;
+        var row = el("label", "row"), lb = el("div", "lb");
+        lb.appendChild(el("b", "", a.label)); lb.appendChild(el("small", "", a.packageName));
+        var inp = el("input"); inp.type = "checkbox"; inp.setAttribute("role", "switch"); inp.checked = !!a.enabled;
+        inp.setAttribute("aria-label", a.label);
+        inp.onchange = function () {
+          var want = inp.checked; inp.disabled = true;
+          rn(it.m, [a.packageName, want]).then(function () { a.enabled = want; count(); })
+            .catch(function (e) { inp.checked = !want; toast(e.message, true); })
+            .then(function () { inp.disabled = false; });
+        };
+        row.appendChild(lb); row.appendChild(inp); box.appendChild(row);
+      });
+      if (!shown) box.appendChild(el("div", "note", list.length ? "Tidak ada yang cocok." : "Tidak ada aplikasi ditemukan."));
+    }
+    q.oninput = draw; count(); draw();
+    return wrap;
+  },
+  lines: function (g, it) {
+    var row = el("div", "row col");
+    row.appendChild(labelBox(it));
+    var ta = el("textarea"); ta.className = "pl"; ta.placeholder = it.ph || ""; ta.setAttribute("aria-label", txt(it.label));
+    ta.value = (it.val(S) || []).join("\n");
+    var b = el("button", "btn", it.btn || "Simpan"); b.type = "button";
+    b.onclick = function () {
+      var mx = txt(it.max), ln = txt(it.len);
+      var v = ta.value.split(/\r?\n/).map(function (x) { return x.trim(); }).filter(Boolean);
+      if (v.length < 1 || v.length > mx) { toast("Isi 1 sampai " + mx + " baris, satu balasan per baris.", true); return; }
+      for (var i = 0; i < v.length; i++) {
+        if (Array.from(v[i]).length > ln) { toast("Baris " + (i + 1) + " lebih dari " + ln + " huruf.", true); return; }
+      }
+      save(g, it, [v]);
+    };
+    row.appendChild(ta); row.appendChild(b);
+    return row;
+  },
+  alarms: function (g, it) {
+    var A = S[it.src], wrap = el("div");
+    var DAYS = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"];
+    var slots = [null, null, null, null, null, null];
+    (A.event || []).forEach(function (a) {
+      if (a.slot >= 1 && a.slot <= 5) slots[a.slot] = { enabled: !!a.enabled, hour: a.hour, minute: a.minute, repeat: a.repeat, name: a.name || "" };
+    });
+    var touched = !!A.smart;
+    var smart = A.smart
+      ? { enabled: !!A.smart.enabled, hour: A.smart.hour, minute: A.smart.minute, repeat: A.smart.repeat, aheadMinutes: A.smart.aheadMinutes }
+      : { enabled: false, hour: 6, minute: 30, repeat: 0, aheadMinutes: 5 };
+    var ahead = null;
+    var body = el("div");
+    function two(n) { return (n < 10 ? "0" : "") + n; }
+    function daysBox(o, mark) {
+      var box = el("div", "days");
+      DAYS.forEach(function (d, i) {
+        var bit = 1 << i, b = el("button", (o.repeat & bit) ? "on" : "", d); b.type = "button";
+        b.setAttribute("aria-pressed", (o.repeat & bit) ? "true" : "false");
+        b.onclick = function () {
+          o.repeat ^= bit; if (mark) mark();
+          b.className = (o.repeat & bit) ? "on" : ""; b.setAttribute("aria-pressed", (o.repeat & bit) ? "true" : "false");
+        };
+        box.appendChild(b);
+      });
+      return box;
+    }
+    function timeBox(o, mark) {
+      var t = el("input"); t.type = "time"; t.value = two(o.hour) + ":" + two(o.minute); t.setAttribute("aria-label", "Waktu alarm");
+      t.onchange = function () {
+        var p = t.value.split(":");
+        if (p.length >= 2 && isFinite(Number(p[0])) && isFinite(Number(p[1]))) { o.hour = Number(p[0]); o.minute = Number(p[1]); if (mark) mark(); }
+      };
+      return t;
+    }
+    function switchBox(o, label, mark) {
+      var line = el("div", "fld"); line.appendChild(el("span", "", label));
+      var sw = el("input"); sw.type = "checkbox"; sw.setAttribute("role", "switch"); sw.checked = o.enabled; sw.setAttribute("aria-label", label);
+      sw.onchange = function () { o.enabled = sw.checked; if (mark) mark(); };
+      line.appendChild(sw);
+      return line;
+    }
+    function draw() {
+      body.textContent = "";
+      for (var i = 1; i <= 5; i++) (function (n) {
+        var s = slots[n], row = el("div", "row col");
+        if (!s) {
+          var add = el("button", "btn g", "Tambah alarm " + n); add.type = "button";
+          add.onclick = function () { slots[n] = { enabled: true, hour: 6, minute: 0, repeat: 0, name: "" }; draw(); };
+          row.appendChild(add); body.appendChild(row); return;
+        }
+        row.appendChild(switchBox(s, "Alarm " + n));
+        var line = el("div", "inline"); line.appendChild(timeBox(s));
+        var nm = el("input"); nm.type = "text"; nm.placeholder = "Nama (boleh kosong)"; nm.maxLength = 64; nm.value = s.name;
+        nm.setAttribute("aria-label", "Nama alarm " + n); nm.oninput = function () { s.name = nm.value; };
+        line.appendChild(nm); row.appendChild(line);
+        row.appendChild(daysBox(s));
+        var del = el("button", "btn g", "Hapus alarm " + n); del.type = "button";
+        del.onclick = function () { slots[n] = null; draw(); };
+        row.appendChild(del);
+        body.appendChild(row);
+      })(i);
+      if (A.smartSupported) {
+        var mark = function () { touched = true; };
+        var row = el("div", "row col");
+        row.appendChild(labelBox({ label: "Alarm pintar", hint: "Berbunyi saat tidurmu paling ringan, dalam jendela menit sebelum waktu yang dipilih. Di jam hanya bisa dimatikan, tidak dihapus." }));
+        row.appendChild(switchBox(smart, "Aktif", mark));
+        row.appendChild(timeBox(smart, mark));
+        row.appendChild(daysBox(smart, mark));
+        var fl = el("label", "fld"); fl.appendChild(el("span", "", "Jendela (menit, 0 sampai 127)"));
+        ahead = el("input"); ahead.type = "number"; ahead.inputMode = "numeric"; ahead.min = 0; ahead.max = 127; ahead.value = smart.aheadMinutes;
+        ahead.setAttribute("aria-label", "Jendela alarm pintar"); ahead.oninput = mark;
+        fl.appendChild(ahead); row.appendChild(fl);
+        body.appendChild(row);
+      }
+    }
+    var head = el("div", "row col");
+    head.appendChild(labelBox({ label: "Alarm di jam", hint: "Tanpa hari dipilih berarti berbunyi sekali. Hapus alarm lalu Simpan menghapusnya dari jam." }));
+    var sv = el("button", "btn", "Simpan ke jam"); sv.type = "button";
+    sv.onclick = function () {
+      var ev = [];
+      for (var n = 1; n <= 5; n++) {
+        var s = slots[n]; if (!s) continue;
+        ev.push({ slot: n, enabled: !!s.enabled, hour: s.hour, minute: s.minute, repeat: s.repeat, name: String(s.name || "").trim().slice(0, 64) });
+      }
+      var sm = null;
+      if (A.smartSupported && touched) {
+        var ah = Number(ahead.value);
+        if (ahead.value.trim() === "" || !isFinite(ah) || Math.floor(ah) !== ah || ah < 0 || ah > 127) { toast("Jendela alarm pintar: isi angka bulat 0 sampai 127.", true); ahead.focus(); return; }
+        sm = { enabled: !!smart.enabled, hour: smart.hour, minute: smart.minute, repeat: smart.repeat, aheadMinutes: ah };
+      }
+      save(g, it, [{ event: ev, smart: sm }]);
+    };
+    wrap.appendChild(head); wrap.appendChild(body);
+    var foot = el("div", "row col"); foot.appendChild(sv); wrap.appendChild(foot);
+    draw();
+    return wrap;
   },
   note: function (g, it) {
     return el("div", "note" + (it.warn ? " warn" : ""), txt(it.text));
