@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Pengaturan</title>
+<style>
+:root{--bg:#f2f4f8;--cd:#ffffff;--tx:#0b0d12;--pr:#0077c8;--ok:#12b76a;--wn:#c47a06;--bad:#d4372f;
+--mt:color-mix(in srgb,var(--tx) 66%,var(--bg));--ln:color-mix(in srgb,var(--tx) 12%,var(--bg));
+--ps:color-mix(in srgb,var(--pr) 14%,var(--cd));--el:color-mix(in srgb,var(--tx) 5%,var(--cd));--r:18px;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+:root[data-theme=dark]{--ok:#32d583;--wn:#fdb022;--bad:#ff6b6b;color-scheme:dark}
+:root[data-theme=light]{color-scheme:light}
+*{box-sizing:border-box}
+html{background:var(--bg);scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0 auto;max-width:560px;padding:0 14px 40px;background:var(--bg);color:var(--tx);
+font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none}
+:focus-visible{outline:3px solid var(--pr);outline-offset:2px}
+
+#bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;display:flex;align-items:center;gap:6px;
+padding:10px 0;background:var(--bg)}
+#back{width:44px;height:44px;border-radius:50%;background:var(--cd);border:1px solid var(--ln);font-size:26px;line-height:1;
+display:grid;place-items:center;padding-bottom:3px}
+#ttl{margin:0;font-size:22px;font-weight:800;letter-spacing:-.02em;line-height:1.2}
+
+.sheet{background:var(--cd);border:1px solid var(--ln);border-radius:var(--r);overflow:hidden}
+.sub{color:var(--mt);font-size:14px;margin:0 2px 14px}
+
+/* daftar kelompok */
+.go{display:flex;align-items:center;gap:12px;width:100%;min-height:64px;padding:12px 16px;text-align:left;border-top:1px solid var(--ln)}
+.go:first-child{border-top:0}
+.go .t{flex:1;min-width:0}
+.go b{display:block;font-size:16px}
+.go small{display:block;color:var(--mt);font-size:13px;line-height:1.35;margin-top:2px}
+.go:after{content:"";flex:none;width:9px;height:9px;border-right:2.5px solid var(--mt);border-top:2.5px solid var(--mt);transform:rotate(45deg)}
+
+/* baris pengaturan */
+.row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 16px;border-top:1px solid var(--ln);min-height:56px}
+.row:first-child{border-top:0}
+.row.col{flex-direction:column;align-items:stretch;gap:10px}
+.lb{flex:1;min-width:0}
+.lb b{display:block;font-weight:700;font-size:15px}
+.lb small{display:block;color:var(--mt);font-size:13px;line-height:1.35;margin-top:2px}
+.note{padding:12px 16px;border-top:1px solid var(--ln);font-size:14px;color:var(--mt)}
+.note.warn{color:var(--wn)}
+.note.err{color:var(--bad)}
+
+input[type=checkbox]{appearance:none;-webkit-appearance:none;flex:none;width:50px;height:30px;border-radius:99px;margin:0;
+background:var(--ln);position:relative;transition:background .2s}
+input[type=checkbox]:after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;
+box-shadow:0 1px 3px #0004;transition:left .2s}
+input[type=checkbox]:checked{background:var(--pr)}
+input[type=checkbox]:checked:after{left:23px}
+select,input[type=number],input[type=text]{min-height:46px;padding:9px 12px;border:1.5px solid var(--ln);border-radius:14px;
+background:var(--bg);font-weight:600;max-width:100%}
+select{flex:none;min-width:128px}
+input[type=number],input[type=text]{width:100%}
+.inline{display:flex;gap:8px;align-items:center}
+.btn{min-height:46px;padding:10px 16px;border-radius:14px;background:var(--pr);color:var(--cd);font-weight:700;text-align:center}
+:root[data-theme=dark] .btn{color:var(--bg)}
+.btn.g{background:var(--el);color:var(--tx);border:1px solid var(--ln)}
+.btn.sm{flex:none}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+.btns .btn{flex:1;min-width:120px}
+
+#m.busy .row,#m.busy .go{opacity:.6;pointer-events:none}
+#toast{position:fixed;left:14px;right:14px;bottom:calc(16px + env(safe-area-inset-bottom,0px));max-width:532px;margin:0 auto;z-index:20;
+padding:12px 16px;border-radius:14px;background:var(--tx);color:var(--bg);font-size:14px;font-weight:600;display:none}
+#toast.err{background:var(--bad);color:#fff}
+.load{padding:24px 16px;color:var(--mt)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header id="bar">
+  <button id="back" type="button" aria-label="Kembali">&#8249;</button>
+  <h1 id="ttl">Pengaturan</h1>
+</header>
+<main id="m"></main>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* ---------- tema: sama dengan index.html (localStorage "la2" satu origin) ---------- */
+/* Palet 26 tema: [terang, gelap], masing-masing [latar, kartu, teks, aksen]. Urutan sama dengan SKINS di index.html. */
+var PALET = [[["#f5f2eb","#ffffff","#1b2b29","#0f766e"],["#0e1514","#162220","#e6f0ee","#2dd4bf"]],[["#e8e8e6","#f6f6f4","#0b0b0b","#d71921"],["#000000","#121212","#f4f4f2","#ff3b30"]],[["#f4f0e8","#fffaf0","#29251f","#b85c38"],["#1a1612","#241e18","#f1e9dc","#e08a63"]],[["#e8f1fb","#ffffff","#0b2540","#0a7fd4"],["#071b33","#102746","#eaf4ff","#42b7ff"]],[["#f1effc","#ffffff","#241f45","#6d4bd0"],["#101827","#1b2638","#e8f0ff","#9d8cff"]],[["#fff5f6","#ffffff","#482b36","#e65385"],["#1f1218","#2b1a22","#ffe9f0","#ff7aa5"]],[["#f0f5ef","#ffffff","#203b2a","#36834b"],["#0e1a12","#16261b","#e3f2e7","#5fd07f"]],[["#fff8e7","#fffdf6","#493d1d","#b18b00"],["#1a1608","#262011","#f6ecc8","#f0c53a"]],[["#f5effa","#ffffff","#2d2038","#8f43c9"],["#17131f","#251d30","#f4eaff","#d08aff"]],[["#f3f6fa","#ffffff","#182536","#3164cc"],["#0d141f","#162131","#e8f0fb","#6b9bff"]],[["#f6f2ee","#ffffff","#211a15","#d6481a"],["#151515","#202020","#f5f5f5","#ff6b35"]],[["#f7f0ff","#ffffff","#35244b","#8654cf"],["#1a1326","#261b36","#efe6ff","#b58cff"]],[["#eafaff","#ffffff","#123944","#009db8"],["#0a1c22","#112b33","#dff7fc","#2fd4ee"]],[["#f8f8f8","#ffffff","#202020","#c62828"],["#121212","#1c1c1c","#f2f2f2","#ff5a5a"]],[["#eef8f5","#ffffff","#12332c","#0f9f78"],["#101f1d","#182d29","#e8fff8","#4ce0b0"]],[["#fff4e9","#ffffff","#4c2c1b","#e16b2e"],["#1c120b","#2a1c13","#ffeadb","#ff9250"]],[["#f1f0ea","#ffffff","#20231e","#606c38"],["#141610","#1e211a","#eceee3","#a3b86a"]],[["#eef2fb","#ffffff","#142038","#3a63d1"],["#0d1528","#18233d","#eef3ff","#6f9cff"]],[["#fdf0f1","#ffffff","#47232b","#b51f4a"],["#1d1114","#2a1a1e","#fbe6ea","#ef6a8c"]],[["#e9f1ff","#f9fbff","#162e55","#3158d5"],["#0c1730","#142343","#e6eeff","#7aa0ff"]],[["#f7f4e6","#fffdf2","#2a2610","#a77d00"],["#15151a","#222229","#f2f2f7","#ffcf4a"]],[["#f3f0e9","#fffdf8","#25231e","#347d70"],["#181a19","#222524","#eeede8","#5cbfaa"]],[["#f1f5f9","#ffffff","#1f2937","#475569"],["#0f141a","#18202a","#e5eaf0","#9fb3c8"]],[["#fbeffa","#ffffff","#3a1840","#c4249b"],["#1b1024","#291833","#fff0ff","#ff65d4"]],[["#f0fff4","#ffffff","#17432c","#15803d"],["#0c1a12","#14271b","#e2fbe9","#4ade80"]],[["#f2f4f8","#ffffff","#0b0d12","#0077c8"],["#0a0a0c","#121318","#ffffff","#00f0ff"]]];
+(function () {
+  var s = {};
+  try { s = JSON.parse(localStorage.getItem("la2") || "{}"); } catch (e) {}
+  var th = s.th || (matchMedia("(prefers-color-scheme:dark)").matches ? "dark" : "light");
+  var i = Math.max(1, Math.min(26, Number(s.skin) || 26)) - 1;
+  var c = PALET[i][th === "dark" ? 1 : 0];
+  var st = document.documentElement.style;
+  st.setProperty("--bg", c[0]); st.setProperty("--cd", c[1]); st.setProperty("--tx", c[2]); st.setProperty("--pr", c[3]);
+  document.documentElement.dataset.theme = th;
+})();
+
+/* ---------- jembatan ke aplikasi: sama dengan rn() di index.html ---------- */
+function rn(method, args, timeout) {
+  return new Promise(function (res, rej) {
+    var h = window.ReactNativeWebView;
+    if (!h || !h.postMessage) { rej(new Error("Pengaturan jam hanya bisa diubah dari aplikasi.")); return; }
+    rn.p = rn.p || {};
+    var id = rn.n = (rn.n || 0) + 1;
+    var t = setTimeout(function () { delete rn.p[id]; rej(new Error("Tidak ada jawaban dari aplikasi.")); }, timeout || 20000);
+    rn.p[id] = { res: res, rej: rej, t: t };
+    h.postMessage(JSON.stringify({ type: "rpc", id: id, method: method, args: args || [] }));
+  });
+}
+window.__rn = function (id, ok, v) {
+  var e = rn.p && rn.p[id];
+  if (!e) return;
+  delete rn.p[id]; clearTimeout(e.t);
+  if (ok) e.res(v); else e.rej(new Error(String(v)));
+};
+window.__hrvTick = function (n) {
+  var e = document.getElementById("hrvt");
+  if (e) e.textContent = "Sisa " + n + " detik. Tetap diam.";
+};
+
+/* ---------- TABEL PENGATURAN ----------
+   Satu kelompok = satu entri di G. Satu pengaturan = satu objek di items. Menambah pengaturan = menambah satu objek.
+
+   Kelompok: id (alamat: pengaturan.html#id; daftarkan juga di Routes.kt), title, sub,
+     load: { kunci: "namaMetodeGet" }  status yang dibaca saat kelompok dibuka; hasilnya ada di s.kunci
+   Item (semua properti teks boleh berupa fungsi (s) => teks):
+     t       jenis: switch | select | number | text | button | buttons | note | hrv
+     need    daftar kunci load yang harus berhasil dibaca; kalau gagal, item disembunyikan
+     vis     (s) => boolean, tampil bila true
+     label, hint
+     val     (s) => nilai sekarang                 (switch, select, number, text)
+     m       nama metode untuk menyimpan; pre: argumen di depan nilai; into: kunci load yang diganti jawabannya;
+             reload: baca ulang semua status setelah berhasil; timeout (ms); done: pesan berhasil
+     opts    [[nilai, teks], ...]; num: ubah nilai pilihan ke angka     (select)
+     min, max, off   batas angka; off = teks bantuan bila kosong        (number)
+     ph, btn         isi bantuan dan teks tombol                        (text)
+     args            argumen tetap                                      (button)
+     plain           tombol sekunder                                    (button)
+     list            [{label, m, args, done}]                           (buttons)
+*/
+var mnt = function (n) { return n + " menit"; };
+var G = [
+  {
+    id: "sinkron", title: "Sinkron dan latar belakang",
+    sub: "Kapan data jam diambil, dan agar tetap jalan saat aplikasi ditutup.",
+    load: { b: "getBackgroundStatus", r: "getBackgroundRestrictions" },
+    items: [
+      { t: "note", need: ["b"], text: function (s) {
+          return s.b.address ? (s.b.name || "Jam") + (s.b.running ? ", berjalan" : s.b.paused ? ", dijeda" : "")
+                             : "Belum ada jam yang diingat. Hubungkan jam dulu lewat Koneksi jam."; } },
+      { t: "button", label: "Sinkron sekarang", m: "syncNow", timeout: 300000, done: "Sinkron selesai.", reload: true },
+      { t: "switch", need: ["b"], label: "Sinkron tetap jalan saat aplikasi ditutup", hint: "Perlu izin notifikasi dan Bluetooth.",
+        val: function (s) { return s.b.enabled; }, m: "setBackgroundEnabled", into: "b" },
+      { t: "select", need: ["b"], label: "Sinkron tiap",
+        val: function (s) { return s.b.syncIntervalMinutes; },
+        opts: [15, 30, 60, 120, 240].map(function (n) { return [n, mnt(n)]; }), num: true, m: "setSyncIntervalMinutes", into: "b" },
+      { t: "note", need: ["r"], warn: true, vis: function (s) { return !s.r.ignoringBatteryOptimizations; },
+        text: "Android bisa menghentikan sinkron saat layar mati." },
+      { t: "button", need: ["r"], plain: true, vis: function (s) { return !s.r.ignoringBatteryOptimizations; },
+        label: "Buka pengaturan baterai", m: "openBatteryExemption" },
+      { t: "button", need: ["r"], plain: true, vis: function (s) { return !!s.r.autoStartVendor; },
+        label: function (s) { return "Buka pengaturan autostart (" + (s.r.manufacturer || "HP") + ")"; }, m: "openAutoStartSettings" },
+      { t: "button", plain: true, label: "Koneksi jam", hint: "Cari jam, ikat, dan sambungkan.", m: "openScreen", args: ["/watch"] }
+    ]
+  },
+  {
+    id: "cuaca", title: "Cuaca",
+    sub: "Prakiraan cuaca yang dikirim ke jam.",
+    load: { w: "getWeatherStatus" },
+    items: [
+      { t: "switch", need: ["w"], label: "Tampilkan cuaca di jam", val: function (s) { return s.w.enabled; }, m: "setWeatherEnabled", into: "w" },
+      { t: "select", need: ["w"], label: "Satuan suhu", val: function (s) { return s.w.unit; },
+        opts: [["celsius", "Celsius"], ["fahrenheit", "Fahrenheit"]], m: "setWeatherUnit", into: "w" },
+      { t: "select", need: ["w"], label: "Perbarui tiap", val: function (s) { return s.w.intervalMinutes; },
+        opts: [30, 60, 120, 240].map(function (n) { return [n, mnt(n)]; }), num: true, m: "setWeatherIntervalMinutes", into: "w" },
+      { t: "select", need: ["w"], label: "Lokasi", hint: "Lokasi HP meminta izin lokasi.", val: function (s) { return s.w.locationMode; },
+        opts: [["current", "Lokasi HP"], ["city", "Kota pilihan"]], m: "setWeatherLocationMode", into: "w" },
+      { t: "text", need: ["w"], label: "Kota pilihan", ph: "mis. Jakarta", btn: "Pakai kota ini", m: "setWeatherCity", reload: true,
+        hint: function (s) { return s.w.city ? "Sekarang: " + (s.w.city.name || "") + (s.w.city.detail ? ", " + s.w.city.detail : "") : "Belum ada kota."; },
+        min: 2, max: 80, timeout: 30000, done: "Kota diatur." },
+      { t: "button", need: ["w"], plain: true, label: "Perbarui cuaca sekarang", m: "refreshWeather", timeout: 60000, done: "Cuaca diperbarui.", reload: true }
+    ]
+  },
+  {
+    id: "notifikasi", title: "Notifikasi dan panggilan",
+    sub: "Apa yang diteruskan dari HP ke jam.",
+    load: { n: "getNotificationAccess", ph: "getPhoneFeatures" },
+    items: [
+      { t: "note", need: ["n"], text: function (s) { return s.n.granted ? "Akses notifikasi sudah diizinkan." : "Akses notifikasi belum diizinkan."; } },
+      { t: "button", need: ["n"], plain: true, vis: function (s) { return !s.n.granted; }, label: "Buka izin notifikasi", m: "openNotificationAccess" },
+      { t: "switch", need: ["n"], label: "Teruskan notifikasi ke jam", val: function (s) { return s.n.enabled; }, m: "setNotificationsEnabled", into: "n" },
+      { t: "switch", need: ["ph"], label: "Cari HP dari jam", val: function (s) { return s.ph.findPhoneEnabled; }, m: "setFindPhoneEnabled", into: "ph" },
+      { t: "switch", need: ["ph"], label: "Tampilkan panggilan masuk di jam", hint: "Meminta izin telepon.",
+        val: function (s) { return s.ph.callsEnabled; }, m: "setCallsEnabled", into: "ph" },
+      { t: "buttons", label: "Ringkasan pagi", hint: "Statusnya belum bisa dibaca dari jam, jadi pilih salah satu.", list: [
+        { label: "Nyalakan", m: "setMorningSummaryEnabled", args: [true], done: "Ringkasan pagi dinyalakan." },
+        { label: "Matikan", m: "setMorningSummaryEnabled", args: [false], done: "Ringkasan pagi dimatikan." } ] }
+    ]
+  },
+  {
+    id: "kesehatan", title: "Sensor kesehatan",
+    sub: "Pengukuran otomatis di jam dan batas detak jantung.",
+    load: { h: "getHealthSensors", st: "getStressStatus" },
+    items: [
+      { t: "switch", need: ["h"], label: "Detak jantung otomatis", val: function (s) { return s.h.automaticHeartRate; }, m: "setHealthSensor", pre: ["automaticHeartRate"], into: "h" },
+      { t: "switch", need: ["h"], label: "SpO2 otomatis", val: function (s) { return s.h.automaticSpo2; }, m: "setHealthSensor", pre: ["automaticSpo2"], into: "h" },
+      { t: "switch", need: ["h"], label: "TruSleep", val: function (s) { return s.h.truSleep; }, m: "setHealthSensor", pre: ["truSleep"], into: "h" },
+      { t: "number", need: ["h"], label: "Alarm detak tinggi (bpm)", off: "Kosongkan untuk mematikan.", min: 0, max: 240,
+        val: function (s) { return s.h.highHeartRateAlert || ""; }, m: "setHealthSensor", pre: ["highHeartRateAlert"], into: "h", done: "Batas detak tersimpan." },
+      { t: "number", need: ["h"], label: "Alarm detak rendah (bpm)", off: "Kosongkan untuk mematikan.", min: 0, max: 240,
+        val: function (s) { return s.h.lowHeartRateAlert || ""; }, m: "setHealthSensor", pre: ["lowHeartRateAlert"], into: "h", done: "Batas detak tersimpan." },
+      { t: "switch", need: ["st"], vis: function (s) { return !!s.st.supported; }, label: "Stres otomatis",
+        hint: "Diam sekitar 1 menit untuk kalibrasi.", val: function (s) { return s.st.enabled; }, m: "setAutomaticStress", timeout: 150000, reload: true },
+      { t: "note", need: ["st"], vis: function (s) { return !s.st.supported; }, text: "Jam ini tidak mendukung pengukuran stres." },
+      { t: "hrv" }
+    ]
+  }
+];
+
+/* ---------- mesin ---------- */
+var S = { err: {} }, cur = "", token = 0, busy = false, toastT = 0;
+var $ = function (id) { return document.getElementById(id); };
+function el(tag, cls, text) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+function txt(v) { return typeof v === "function" ? v(S) : v; }
+function toast(text, isErr) {
+  var t = $("toast");
+  t.textContent = text; t.className = isErr ? "err" : ""; t.style.display = "block";
+  clearTimeout(toastT);
+  toastT = setTimeout(function () { t.style.display = "none"; }, isErr ? 6000 : 3000);
+}
+function setBusy(b) { busy = b; $("m").classList.toggle("busy", b); $("m").setAttribute("aria-busy", b ? "true" : "false"); }
+function group(id) { for (var i = 0; i < G.length; i++) if (G[i].id === id) return G[i]; return null; }
+
+function loadData(g) {
+  var keys = Object.keys(g.load);
+  S = { err: {} };
+  return Promise.all(keys.map(function (k) {
+    return rn(g.load[k]).then(function (v) { S[k] = v; }).catch(function (e) { S[k] = null; S.err[k] = e.message; });
+  }));
+}
+
+function usable(it) {
+  var need = it.need || [];
+  for (var i = 0; i < need.length; i++) if (S[need[i]] == null) return false;
+  return !it.vis || it.vis(S);
+}
+
+/* Menyimpan satu pengaturan lewat jembatan; status baru dari jawaban atau dibaca ulang. */
+function save(g, it, vals) {
+  if (busy) return Promise.resolve();
+  setBusy(true);
+  return rn(it.m, (it.pre || []).concat(it.args || [], vals), it.timeout)
+    .then(function (res) {
+      if (it.into && res && typeof res === "object") S[it.into] = res;
+      if (it.reload || (it.into && !(res && typeof res === "object"))) return loadData(g);
+    })
+    .then(function () { toast(txt(it.done) || "Tersimpan."); })
+    .catch(function (e) { toast(e.message, true); })
+    .then(function () { setBusy(false); if (cur === g.id) renderGroup(g); });
+}
+
+function labelBox(it) {
+  var box = el("div", "lb");
+  var l = txt(it.label), h = txt(it.hint);
+  if (l) box.appendChild(el("b", "", l));
+  if (h) box.appendChild(el("small", "", h));
+  return box;
+}
+
+var KIND = {
+  switch: function (g, it) {
+    var row = el("label", "row");
+    var inp = el("input"); inp.type = "checkbox"; inp.setAttribute("role", "switch"); inp.checked = !!it.val(S);
+    inp.onchange = function () { save(g, it, [inp.checked]); };
+    row.appendChild(labelBox(it)); row.appendChild(inp);
+    return row;
+  },
+  select: function (g, it) {
+    var row = el("div", "row");
+    var sel = el("select"); sel.setAttribute("aria-label", txt(it.label));
+    var now = String(it.val(S));
+    it.opts.forEach(function (o) {
+      var op = el("option", "", o[1]); op.value = String(o[0]); if (String(o[0]) === now) op.selected = true; sel.appendChild(op);
+    });
+    sel.onchange = function () { save(g, it, [it.num ? Number(sel.value) : sel.value]); };
+    row.appendChild(labelBox(it)); row.appendChild(sel);
+    return row;
+  },
+  number: function (g, it) {
+    var row = el("div", "row col");
+    row.appendChild(labelBox(it));
+    var line = el("div", "inline");
+    var inp = el("input"); inp.type = "number"; inp.inputMode = "numeric"; inp.value = it.val(S); inp.min = it.min; inp.max = it.max;
+    inp.setAttribute("aria-label", txt(it.label));
+    var b = el("button", "btn sm", "Simpan"); b.type = "button";
+    b.onclick = function () {
+      var raw = inp.value.trim(), n = raw === "" ? 0 : Number(raw);
+      if (!isFinite(n) || Math.floor(n) !== n || n < it.min || n > it.max) { toast("Isi angka bulat " + it.min + " sampai " + it.max + ".", true); return; }
+      save(g, it, [n]);
+    };
+    line.appendChild(inp); line.appendChild(b); row.appendChild(line);
+    if (it.off) row.appendChild(el("small", "", it.off)).style.color = "var(--mt)";
+    return row;
+  },
+  text: function (g, it) {
+    var row = el("div", "row col");
+    row.appendChild(labelBox(it));
+    var line = el("div", "inline");
+    var inp = el("input"); inp.type = "text"; inp.placeholder = it.ph || ""; inp.autocomplete = "off"; inp.setAttribute("aria-label", txt(it.label));
+    var b = el("button", "btn sm", it.btn || "Simpan"); b.type = "button";
+    b.onclick = function () {
+      var v = inp.value.trim();
+      if (v.length < it.min || v.length > it.max) { toast("Isi " + it.min + " sampai " + it.max + " huruf.", true); return; }
+      save(g, it, [v]);
+    };
+    line.appendChild(inp); line.appendChild(b); row.appendChild(line);
+    return row;
+  },
+  button: function (g, it) {
+    var row = el("div", "row col");
+    var b = el("button", "btn" + (it.plain ? " g" : ""), txt(it.label)); b.type = "button";
+    b.onclick = function () { save(g, it, []); };
+    row.appendChild(b);
+    var h = txt(it.hint);
+    if (h) row.appendChild(el("small", "", h)).style.color = "var(--mt)";
+    return row;
+  },
+  buttons: function (g, it) {
+    var row = el("div", "row col");
+    row.appendChild(labelBox(it));
+    var box = el("div", "btns");
+    it.list.forEach(function (x) {
+      var b = el("button", "btn g", x.label); b.type = "button";
+      b.onclick = function () { save(g, { m: x.m, args: x.args, done: x.done }, []); };
+      box.appendChild(b);
+    });
+    row.appendChild(box);
+    return row;
+  },
+  note: function (g, it) {
+    return el("div", "note" + (it.warn ? " warn" : ""), txt(it.text));
+  },
+  hrv: function () {
+    var row = el("div", "row col");
+    row.appendChild(el("div", "lb")).appendChild(el("b", "", "HRV"));
+    var res = el("p", "sub", "Ukur HRV sekitar 1 menit sambil diam."); res.id = "hrvr"; res.style.margin = "0";
+    var tick = el("p", "sub", ""); tick.id = "hrvt"; tick.style.margin = "0";
+    var box = el("div", "btns");
+    var go = el("button", "btn", "Ukur HRV"); go.type = "button";
+    var stop = el("button", "btn g", "Batalkan"); stop.type = "button";
+    go.onclick = function () {
+      res.textContent = "Mengukur. Tetap diam.";
+      rn("measureHrv", [], 150000).then(function (r) {
+        res.textContent = "HRV (rMSSD): " + Math.round(r.rmssd) + " ms, detak " + Math.round(r.heartRate) + " bpm.";
+        tick.textContent = "";
+      }).catch(function (e) { res.textContent = e.message; tick.textContent = ""; });
+    };
+    stop.onclick = function () { rn("cancelHrvMeasurement").catch(function (e) { res.textContent = e.message; }); };
+    box.appendChild(go); box.appendChild(stop);
+    row.appendChild(res); row.appendChild(tick); row.appendChild(box);
+    return row;
+  }
+};
+
+function renderList() {
+  document.title = "Pengaturan"; $("ttl").textContent = "Pengaturan";
+  var m = $("m"); m.textContent = "";
+  m.appendChild(el("p", "sub", "Pengaturan yang berhubungan dengan jam Huawei."));
+  var sheet = el("div", "sheet");
+  G.forEach(function (g) {
+    var b = el("button", "go"); b.type = "button";
+    var t = el("div", "t"); t.appendChild(el("b", "", g.title)); t.appendChild(el("small", "", g.sub));
+    b.appendChild(t);
+    b.onclick = function () { go(g.id); };
+    sheet.appendChild(b);
+  });
+  m.appendChild(sheet);
+}
+
+function renderGroup(g) {
+  $("ttl").textContent = g.title; document.title = g.title;
+  var m = $("m"); m.textContent = "";
+  m.appendChild(el("p", "sub", g.sub));
+  var sheet = el("div", "sheet");
+  var failed = Object.keys(S.err);
+  failed.forEach(function (k) { sheet.appendChild(el("div", "note err", S.err[k])); });
+  g.items.forEach(function (it) {
+    if (!usable(it)) return;
+    sheet.appendChild(KIND[it.t](g, it));
+  });
+  if (!sheet.firstChild) sheet.appendChild(el("div", "load", "Tidak ada pengaturan yang bisa ditampilkan."));
+  m.appendChild(sheet);
+}
+
+function show() {
+  var my = ++token, g = group(cur);
+  setBusy(false);
+  if (!g) { cur = ""; renderList(); return; }
+  $("ttl").textContent = g.title;
+  var m = $("m"); m.textContent = ""; m.appendChild(el("div", "load", "Memuat\u2026"));
+  loadData(g).then(function () { if (my === token) renderGroup(g); });
+}
+
+function go(id) {
+  cur = id || "";
+  try { history.replaceState(null, "", cur ? "#" + cur : location.pathname + location.search); } catch (e) {}
+  show();
+}
+
+/* Tombol Back di aplikasi: dari kelompok kembali ke daftar; dari daftar biarkan aplikasi menutup layar ini. */
+window.nativeBack = function () { if (cur) { go(""); return true; } return false; };
+$("back").onclick = function () {
+  if (cur) go(""); else rn("openScreen", ["/"]).catch(function () {});
+};
+window.addEventListener("hashchange", function () {
+  var id = location.hash.replace(/^#/, "");
+  if (id !== cur) { cur = /^[a-z0-9-]{1,30}$/.test(id) ? id : ""; show(); }
+});
+(function () {
+  var id = location.hash.replace(/^#/, "");
+  cur = /^[a-z0-9-]{1,30}$/.test(id) ? id : "";
+  show();
+})();
+</script>
+</body>
+</html>

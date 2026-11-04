@@ -29,6 +29,11 @@
 
         <activity android:name=".PairingActivity" android:exported="false" />
 
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
         <receiver android:name=".PlanReceiver" android:exported="false" />
         <receiver android:name=".PlanBootReceiver" android:exported="true">
             <intent-filter>

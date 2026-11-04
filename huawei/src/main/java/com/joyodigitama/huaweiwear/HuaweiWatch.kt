@@ -91,7 +91,7 @@ class HuaweiWatch private constructor(context: Context) {
     }
 
     override fun log(direction: LogDirection, serviceId: Int?, commandId: Int?, hex: String?, message: String) {
-      addLog("${direction.wire} $message")
+      addLog("${direction.wire} $message" + (hex?.let { " [${it.take(200)}]" } ?: ""))
     }
 
     override fun deviceDiscovered(device: DiscoveredDevice) {
@@ -111,7 +111,7 @@ class HuaweiWatch private constructor(context: Context) {
   }
 
   private fun addLog(line: String) {
-    _log.update { (it + line).takeLast(200) }
+    _log.update { (it + line).takeLast(500) }
   }
 
   private inline fun <T> guard(block: () -> T): T =

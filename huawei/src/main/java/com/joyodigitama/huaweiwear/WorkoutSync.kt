@@ -241,7 +241,9 @@ internal class WorkoutSync(
 
   private fun split(queue: ArrayDeque<Range>, range: Range) {
     if (range.depth >= MAX_SMALLER_TIMESLOT_DEPTH) {
-      throw WearException(ErrorCodes.PROTOCOL, "Workout: asked for a smaller timeslot too many times, giving up on ${range.start}..${range.end}")
+      // Run Now: do not fail the whole sync (and the Night HRV / health metrics that follow); skip this slot.
+      log("Workout: asked for a smaller timeslot too many times, skipping ${range.start}..${range.end}")
+      return
     }
     val half = range.start + (range.end - range.start) / 2
     log("Workout: retrying ${range.start}..${range.end} as ${range.start}..$half and ${half + 1}..${range.end}")
