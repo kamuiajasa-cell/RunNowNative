@@ -9,10 +9,10 @@ import android.content.Intent
 internal object Routes {
     /** Kelompok yang ada di pengaturan.html. Tambah di sini bersama kelompok baru di tabel G pada pengaturan.html. */
     private val GROUPS = setOf(
-        "sinkron", "dasar", "cuaca", "notifikasi", "aplikasi", "alarm", "gnss", "rute", "kursus", "hidup-sehat", "kesehatan",
+        "sinkron", "dasar", "cuaca", "notifikasi", "aplikasi", "alarm", "gnss", "rute", "kursus", "hidup-sehat", "wajah", "foto-jam", "kustom-wajah", "keselamatan", "tidur-siklus", "target", "latihan-jam", "kesehatan",
     )
 
-    private val ALIAS = mapOf("/settings/notification-apps" to "aplikasi", "/watch/alarms" to "alarm")
+    private val ALIAS = mapOf("/settings/notification-apps" to "aplikasi", "/watch/alarms" to "alarm", "/watch/faces" to "wajah")
 
     fun open(from: BridgeActivity, route: String): Boolean {
         if (route == "/") {

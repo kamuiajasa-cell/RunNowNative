@@ -2,6 +2,12 @@ package com.joyodigitama.huaweiwear
 
 import android.Manifest
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Matrix
+import android.graphics.Paint
 import android.os.Build
 import android.webkit.JavascriptInterface
 import kotlinx.coroutines.CancellationException
@@ -63,6 +69,8 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
     addLocation(t)
     addHealth(t)
     addScreens(t)
+    addFaces(t)
+    addExtras(t)
   }
 
   private fun MutableMap<String, Rpc>.m(name: String, rule: Rule = NONE, call: suspend (List<Any?>) -> Any?) {
@@ -102,6 +110,10 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
 
     override fun hrvProgress(secondsLeft: Int, beats: Int) {
       host.eval("window.__hrvTick&&window.__hrvTick($secondsLeft);")
+    }
+
+    override fun uploadProgress(bytes: Int, total: Int) {
+      host.eval("window.__upTick&&window.__upTick($bytes,$total);")
     }
 
     override fun heartRate(bpm: Int, tsMs: Long) {
@@ -530,6 +542,290 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
   private suspend fun bluetoothAllowed(): Boolean =
     Build.VERSION.SDK_INT < Build.VERSION_CODES.S || host.ask(listOf(Manifest.permission.BLUETOOTH_CONNECT))
 
+  /**
+   * Tampilan jam (langkah 7): wajah jam (.hwt), foto jam, dan kustomisasi wajah. Beda dari JoyoFit: berkas dipilih lewat pemilih berkas
+   * sistem (parseWatchfacePackage dan addPhoto tanpa argumen), lalu installWatchface memasang berkas yang terakhir dipilih.
+   */
+  private fun addFaces(t: MutableMap<String, Rpc>) {
+    t.m("listWatchfaces") { runtime.watchfaces.list() }
+    t.m("setActiveWatchface", FACE_ID) { a ->
+      requireConnected()
+      runtime.watchfaces.setActive((a[0] as String).trim())
+    }
+    t.m("deleteWatchface", FACE_ID) { a ->
+      requireConnected()
+      runtime.watchfaces.delete((a[0] as String).trim())
+    }
+    t.m("getPickedWatchface") { pickedFaceInfo() }
+    t.m("parseWatchfacePackage") {
+      val file = pick("*/*")
+      val tmp = java.io.File(app.cacheDir, "face_pick.hwt")
+      val info: Map<String, Any?> = try {
+        withContext(Dispatchers.IO) { tmp.writeBytes(file.bytes) }
+        runtime.watchfaces.parsePackage(android.net.Uri.fromFile(tmp).toString(), true)
+      } finally {
+        tmp.delete()
+      }
+      val local = info["localUri"] as? String ?: throw IllegalStateException("Berkas wajah jam tidak bisa disimpan di HP.")
+      dropPickedFace()
+      // WebView tidak bisa memuat berkas lokal, jadi pratinjau dikirim sebagai data URI lalu berkas pratinjau dibuang.
+      val previewUri = info["previewUri"] as? String
+      val preview = previewUri?.let { dataUri(it, "image/jpeg", 600_000) }
+      previewUri?.let { runtime.watchfaces.deleteLocalFile(it) }
+      pickedFace = PickedFace(file.name, local, info - "previewUri" - "localUri" + mapOf("preview" to preview))
+      pickedFaceInfo()
+    }
+    t.m("installWatchface") {
+      requireConnected()
+      val p = pickedFace ?: throw IllegalStateException("Pilih berkas wajah jam (.hwt) dulu.")
+      runtime.watchfaces.install(p.localUri)
+    }
+    t.m("deleteLocalWatchfaceFile") {
+      dropPickedFace()
+      null
+    }
+
+    // Foto jam. Foto dipilih lewat pemilih berkas, dipotong dan diperkecil di sini ke ukuran layar jam, lalu dikirim.
+    t.m("getPhotoFace") { withThumbs(runtime.photoFaces.info()) }
+    t.m("addPhoto") {
+      requireConnected()
+      val state = runtime.photoFaces.info()
+      val w = (state["width"] as? Int) ?: 0
+      val h = (state["height"] as? Int) ?: 0
+      if (w <= 0 || h <= 0) throw IllegalStateException("Ukuran layar jam tidak terbaca.")
+      val file = pick("image/*")
+      val png = withContext(Dispatchers.Default) { cropPhoto(file.bytes, w, h) }
+      val tmp = java.io.File(app.cacheDir, "photo_pick.png")
+      try {
+        withContext(Dispatchers.IO) { tmp.writeBytes(png) }
+        withThumbs(runtime.photoFaces.add(android.net.Uri.fromFile(tmp).toString()))
+      } finally {
+        tmp.delete()
+      }
+    }
+    t.m("deletePhoto", text("Nama foto tidak valid.", 1, 100)) { a ->
+      requireConnected()
+      withThumbs(runtime.photoFaces.delete((a[0] as String).trim()))
+    }
+    t.m("setPhotoFaceActive") {
+      requireConnected()
+      withThumbs(runtime.photoFaces.setActive())
+    }
+
+    // Kustomisasi wajah (gaya, warna, widget). Jam hanya melaporkan pilihan yang dipakai, bukan daftar pilihan yang ada.
+    t.m("getFaceCustomization", FACE_ID) { a ->
+      requireConnected()
+      runtime.faceCustomizer.query((a[0] as String).trim()).toJs()
+    }
+    t.m("applyFaceCustomization", FACE_CONFIG) { a ->
+      requireConnected()
+      val o = a[0] as JSONObject
+      val styles = o.optJSONArray("styles")
+      val widgets = o.optJSONArray("widgets")
+      val config = FaceCustomization(
+        marketId = o.getString("marketId").trim(),
+        styles = if (styles == null) emptyList() else List(styles.length()) { i ->
+          val x = styles.getJSONObject(i)
+          FaceStyleChoice(x.getInt("mode"), x.getInt("index"))
+        },
+        colourIndex = o.opt("colourIndex") as? Int,
+        customColour = (o.opt("customColour") as? String)?.trim()?.takeIf { it.isNotEmpty() },
+        widgets = if (widgets == null) emptyList() else List(widgets.length()) { i -> widgets.getInt(i) },
+      )
+      runtime.faceCustomizer.apply(config.marketId, config).toJs()
+    }
+  }
+
+  /**
+   * Keselamatan, tidur dan siklus, target dan bodi, latihan dari jam (langkah 8, bagian pertama). Relai SOS (SMS) sengaja
+   * tidak ada: izin SMS dibuang di manifest `app`. Beda dari JoyoFit: setFallDetection mengembalikan {sent}; metode siklus
+   * mengembalikan ringkasan siklus terbaru; setActivityGoals mengembalikan status ditambah {sent}.
+   */
+  private fun addExtras(t: MutableMap<String, Rpc>) {
+    val extras = runtime.extras
+
+    // Keselamatan: hanya deteksi jatuh.
+    t.m("getSafety") { extras.safetyStatus() }
+    t.m("setFallDetection", BOOL) { a ->
+      requireConnected()
+      mapOf("sent" to extras.safety.setFall(a[0] as Boolean))
+    }
+    t.m("queryFallDetection") {
+      requireConnected()
+      mapOf("sent" to extras.safety.queryFall())
+    }
+
+    // Tidur.
+    t.m("setSleepReportEnabled", BOOL) { a ->
+      extras.settings.sleepReportEnabled = a[0] as Boolean
+      extras.safetyStatus()
+    }
+    t.m("sendSleepReportNow") {
+      requireConnected()
+      mapOf("result" to extras.sleepReport.push(true))
+    }
+
+    // Siklus haid. Akses database, jadi jalan di thread IO.
+    val cycle = extras.menstrual
+    t.m("getCycle") { withContext(Dispatchers.IO) { cycle.overview() } }
+    t.m("setCycleEnabled", BOOL) { a ->
+      withContext(Dispatchers.IO) {
+        cycle.setEnabled(a[0] as Boolean)
+        cycle.overview()
+      }
+    }
+    t.m("setCycleSwitches", SWITCHES) { a ->
+      val o = a[0] as JSONObject
+      withContext(Dispatchers.IO) {
+        cycle.setSwitches(
+          MenstrualCodec.Switches(
+            master = o.getBoolean("master"),
+            periodStart = o.getBoolean("periodStart"),
+            periodEnd = o.getBoolean("periodEnd"),
+            fertileStart = o.getBoolean("fertileStart"),
+            fertileEnd = o.getBoolean("fertileEnd"),
+            easyPregnancy = o.getBoolean("easyPregnancy"),
+          ),
+        )
+        cycle.overview()
+      }
+    }
+    t.m("startPeriod", DAYS) { a -> withContext(Dispatchers.IO) { cycle.startPeriod(a[0] as String); cycle.overview() } }
+    t.m("endPeriod", DAYS) { a -> withContext(Dispatchers.IO) { cycle.endPeriod(a[0] as String); cycle.overview() } }
+    t.m("addPeriod", DAYS) { a -> withContext(Dispatchers.IO) { cycle.addPeriod(a[0] as String, a[1] as String); cycle.overview() } }
+    t.m("deletePeriod", DAYS) { a -> withContext(Dispatchers.IO) { cycle.deletePeriod(a[0] as String); cycle.overview() } }
+    t.m("logCycleDay", LOG_DAY) { a ->
+      withContext(Dispatchers.IO) {
+        cycle.logDay(a[0] as String, a[1] as Int, a[2] as Int)
+        cycle.overview()
+      }
+    }
+
+    // Target aktivitas dan bodi.
+    t.m("getActivityGoals") { runtime.activityGoals.status() }
+    t.m("setActivityGoals", GOALS) { a ->
+      val o = a[0] as JSONObject
+      val sent = runtime.activityGoals.set(
+        ActivityGoalsData(
+          steps = o.getInt("steps"),
+          calories = o.getInt("calories"),
+          exerciseMinutes = o.getInt("exerciseMinutes"),
+          standHours = o.getInt("standHours"),
+          remindStand = o.getBoolean("remindStand"),
+          remindProgress = o.getBoolean("remindProgress"),
+          remindGoalReached = o.getBoolean("remindGoalReached"),
+        ),
+      )
+      runtime.activityGoals.status() + mapOf("sent" to sent)
+    }
+    t.m("sendActivityGoals") {
+      requireConnected()
+      mapOf("sent" to runtime.activityGoals.send("manual"))
+    }
+    t.m("getBodyMetrics") { runtime.bodyMetrics.load().toJs() }
+    t.m("setBodyMetrics", BODY) { a ->
+      val o = a[0] as JSONObject
+      val now = System.currentTimeMillis()
+      val weight = (o.opt("weightKg") as? Number)?.toDouble()
+      val fat = (o.opt("bodyFatPct") as? Number)?.toDouble()
+      val sys = o.opt("systolic") as? Int
+      runtime.bodyMetrics.set(
+        BodyMetricsData(
+          weightKg = weight,
+          weightTsMs = weight?.let { now },
+          bodyFatPct = fat,
+          bodyFatTsMs = fat?.let { now },
+          restingKcal = o.opt("restingKcal") as? Int,
+          systolic = sys,
+          diastolic = o.opt("diastolic") as? Int,
+          bpTsMs = sys?.let { now },
+        ),
+      ).toJs()
+    }
+
+    // Latihan dari jam.
+    t.m("getWatchWorkout") { runtime.watchWorkout.status() }
+    t.m("startWatchWorkout", SPORT) { a ->
+      requireConnected()
+      runtime.watchWorkout.start(a[0] as Int).toJs()
+    }
+    t.m("pauseWatchWorkout") { requireConnected(); runtime.watchWorkout.pause().toJs() }
+    t.m("resumeWatchWorkout") { requireConnected(); runtime.watchWorkout.resume().toJs() }
+    t.m("stopWatchWorkout") { requireConnected(); runtime.watchWorkout.stop().toJs() }
+  }
+
+  /** Berkas wajah jam yang terakhir dipilih: salinan di filesDir/watchfaces dan keterangannya. */
+  private class PickedFace(val fileName: String, val localUri: String, val info: Map<String, Any?>)
+
+  @Volatile
+  private var pickedFace: PickedFace? = null
+
+  private fun pickedFaceInfo(): Map<String, Any?>? = pickedFace?.let { mapOf("fileName" to it.fileName) + it.info }
+
+  private fun dropPickedFace() {
+    pickedFace?.let { runtime.watchfaces.deleteLocalFile(it.localUri) }
+    pickedFace = null
+  }
+
+  /** Isi berkas gambar kecil sebagai data URI; null bila berkas tidak ada atau lebih besar dari [limit] byte. */
+  private fun dataUri(fileUri: String, mime: String, limit: Int): String? {
+    return try {
+      val path = android.net.Uri.parse(fileUri).path ?: return null
+      val f = java.io.File(path)
+      if (!f.isFile || f.length() > limit) null
+      else "data:$mime;base64," + android.util.Base64.encodeToString(f.readBytes(), android.util.Base64.NO_WRAP)
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  /** Foto di jawaban foto jam: `uri` (berkas lokal) diganti `thumb` (data URI) karena WebView tidak bisa memuat berkas lokal. */
+  private fun withThumbs(m: Map<String, Any?>): Map<String, Any?> {
+    val photos = m["photos"] as? List<*> ?: return m
+    val out = photos.map { p ->
+      val pm = p as? Map<*, *>
+      if (pm == null) {
+        p
+      } else {
+        val uri = pm["uri"] as? String
+        mapOf("index" to pm["index"], "name" to pm["name"], "thumb" to uri?.let { dataUri(it, "image/png", 400_000) })
+      }
+    }
+    return m + mapOf("photos" to out)
+  }
+
+  /** Foto dipotong dari tengah dan diperkecil supaya persis [w] x [h] piksel (yang dituntut foto jam); sisi kosong diisi hitam. */
+  private fun cropPhoto(bytes: ByteArray, w: Int, h: Int): ByteArray {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IllegalArgumentException("Berkas itu bukan gambar yang bisa dibaca.")
+    var sample = 1
+    while (bounds.outWidth / (sample * 2) >= w && bounds.outHeight / (sample * 2) >= h) sample *= 2
+    val opts = BitmapFactory.Options().apply {
+      inSampleSize = sample
+      inPreferredConfig = Bitmap.Config.ARGB_8888
+    }
+    val src = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+      ?: throw IllegalArgumentException("Berkas itu bukan gambar yang bisa dibaca.")
+    val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    try {
+      val scale = maxOf(w.toFloat() / src.width, h.toFloat() / src.height)
+      val matrix = Matrix().apply {
+        postScale(scale, scale)
+        postTranslate((w - src.width * scale) / 2f, (h - src.height * scale) / 2f)
+      }
+      val canvas = Canvas(out)
+      canvas.drawColor(Color.BLACK)
+      canvas.drawBitmap(src, matrix, Paint(Paint.FILTER_BITMAP_FLAG))
+      val bos = java.io.ByteArrayOutputStream()
+      out.compress(Bitmap.CompressFormat.PNG, 100, bos)
+      return bos.toByteArray()
+    } finally {
+      src.recycle()
+      out.recycle()
+    }
+  }
+
   /** Rute yang terakhir dipilih lewat pickRouteFile; hanya di memori, hilang saat aplikasi ditutup. */
   private class PickedRoute(val fileName: String, val parsed: RouteGpx.Parsed)
 
@@ -562,7 +858,7 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
     return out.toString().trim()
   }
 
-  /** Minta pengguna memilih berkas; dipakai pickRouteFile (langkah 6) dan nanti wajah jam serta impor Huawei (langkah 7 dan 8). */
+  /** Minta pengguna memilih berkas; dipakai pickRouteFile (langkah 6), wajah jam dan foto jam (langkah 7), dan nanti impor Huawei (langkah 8). */
   private suspend fun pick(mime: String): PickedFile =
     host.pickFile(mime) ?: throw IllegalStateException("Pemilihan berkas dibatalkan.")
 
@@ -816,6 +1112,98 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
     }
 
     val COURSE = Rule { a -> courseProblem(a) }
+
+    val DAY_FORMAT = Regex("^\\d{4}-\\d{2}-\\d{2}$")
+    const val DAY_MSG = "Tanggal harus berbentuk TTTT-BB-HH."
+
+    /** Satu atau dua tanggal (mulai, selesai). */
+    val DAYS = Rule { a ->
+      if (a.size in 1..2 && a.all { it is String && DAY_FORMAT.matches(it) }) null else DAY_MSG
+    }
+
+    /** [tanggal, aliran 0..3, kram 0..3]. */
+    val LOG_DAY = Rule { a ->
+      val f = a.getOrNull(1)
+      val c = a.getOrNull(2)
+      val d = a.getOrNull(0)
+      if (a.size != 3 || d !is String || !DAY_FORMAT.matches(d)) DAY_MSG
+      else if (f !is Int || f !in 0..3 || c !is Int || c !in 0..3) "Aliran dan kram harus 0 sampai 3."
+      else null
+    }
+
+    val SWITCHES = Rule { a ->
+      val o = a.singleOrNull() as? JSONObject
+      val keys = listOf("master", "periodStart", "periodEnd", "fertileStart", "fertileEnd", "easyPregnancy")
+      if (o != null && keys.all { o.opt(it) is Boolean }) null else "Pengaturan pengingat siklus tidak valid."
+    }
+
+    val GOALS = Rule { a ->
+      val o = a.singleOrNull() as? JSONObject
+      val ints = listOf("steps", "calories", "exerciseMinutes", "standHours")
+      val bools = listOf("remindStand", "remindProgress", "remindGoalReached")
+      if (o != null && ints.all { o.opt(it) is Int } && bools.all { o.opt(it) is Boolean }) null else "Target aktivitas tidak valid."
+    }
+
+    /** Semua bidang opsional, tetapi paling tidak satu; tekanan darah harus lengkap berdua. */
+    val BODY = Rule { a ->
+      val o = a.singleOrNull() as? JSONObject
+      fun num(k: String, lo: Double, hi: Double): Boolean? {
+        val v = o?.opt(k)
+        if (v == null || v == JSONObject.NULL) return null
+        return v is Number && v.toDouble() in lo..hi
+      }
+      fun whole(k: String, lo: Int, hi: Int): Boolean? {
+        val v = o?.opt(k)
+        if (v == null || v == JSONObject.NULL) return null
+        return v is Int && v in lo..hi
+      }
+      val checks = listOf(num("weightKg", 20.0, 300.0), num("bodyFatPct", 2.0, 70.0), whole("restingKcal", 500, 5000), whole("systolic", 60, 250), whole("diastolic", 30, 150))
+      val given = checks.filterNotNull()
+      val bp = (checks[3] == null) == (checks[4] == null)
+      if (o == null || given.isEmpty() || !given.all { it } || !bp) "Isi bodi tidak valid: berat 20 sampai 300 kg, lemak 2 sampai 70 persen, metabolisme 500 sampai 5000 kkal, tekanan darah berdua." else null
+    }
+
+    val SPORT = Rule { a ->
+      val v = a.singleOrNull()
+      if (v is Int && v in 1..255) null else "Jenis olahraga tidak valid."
+    }
+
+    val FACE_ID = text("Id wajah jam tidak valid.", 1, 64)
+
+    /** Konfigurasi wajah: {marketId, styles:[{mode 0..7, index 0..255}], colourIndex, customColour, widgets:[0..255]}. */
+    val FACE_CONFIG = Rule { a ->
+      val o = a.singleOrNull() as? JSONObject
+      if (o == null) "Konfigurasi wajah jam tidak valid." else faceConfigProblem(o)
+    }
+
+    fun faceConfigProblem(o: JSONObject): String? {
+      val bad = "Konfigurasi wajah jam tidak valid."
+      val id = o.optString("marketId").trim()
+      if (id.isEmpty() || id.length > 64) return "Id wajah jam tidak valid."
+      val styles = o.optJSONArray("styles")
+      if (styles != null) {
+        if (styles.length() > 16) return bad
+        for (i in 0 until styles.length()) {
+          val x = styles.optJSONObject(i) ?: return bad
+          val mode = x.opt("mode")
+          val index = x.opt("index")
+          if (mode !is Int || mode !in 0..7 || index !is Int || index !in 0..255) return bad
+        }
+      }
+      val widgets = o.optJSONArray("widgets")
+      if (widgets != null) {
+        if (widgets.length() > 32) return bad
+        for (i in 0 until widgets.length()) {
+          val v = widgets.opt(i)
+          if (v !is Int || v !in 0..255) return bad
+        }
+      }
+      val colour = o.opt("colourIndex")
+      if (colour != null && colour != JSONObject.NULL && (colour !is Int || colour < 0)) return bad
+      val custom = o.opt("customColour")
+      if (custom != null && custom != JSONObject.NULL && (custom !is String || custom.length > 16)) return bad
+      return null
+    }
 
     /** Daftar waktu mulai latihan (detik atau ms sesuai index.html), 1 sampai 200 angka. */
     val REFETCH = Rule { a ->

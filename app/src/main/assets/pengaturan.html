@@ -172,6 +172,12 @@ window.__hrvTick = function (n) {
      t: "agps"      status data satelit dengan tombol Perbarui dan Batal; memantau getAgps tiap detik sendiri (tidak lewat save, supaya Batal bisa diketuk). src: kunci load berisi getAgps
      t: "course"    editor program lari (grup, langkah, target, usaha); draf disimpan di localStorage[\"rn_course_draft\"]. m: pushRunningCourse; timeout; done
      text: val      isi awal kotak teks (fungsi (s) => teks)
+   Tambahan langkah 7:
+     t: "faces"     daftar wajah jam di jam (Aktifkan, Hapus). src: kunci load berisi hasil listWatchfaces
+     t: "facepick"  pilih berkas .hwt, pratinjau, dan Pasang ke jam. src: kunci load getPickedWatchface; wf: kunci load listWatchfaces (cek ukuran layar)
+     t: "photos"    foto jam: kisi foto, Tambah (pemilih berkas), Hapus, Aktifkan wajah foto. src: kunci load berisi hasil getPhotoFace
+     t: "facecustom" baca dan ubah pilihan wajah (gaya, warna, widget). src: kunci load berisi hasil listWatchfaces
+   Tambahan langkah 8: buttons.list boleh fungsi (s) => [{label, m, args, done, reload}]; form.spread: pack mengembalikan daftar argumen (bukan satu objek)
 */
 /* ---------- Langkah 6: pembantu data satelit (A-GPS) ---------- */
 var AGPS_TXT = {
@@ -567,6 +573,157 @@ var G = [
     ]
   },
   {
+    id: "wajah", title: "Wajah jam",
+    sub: "Pasang wajah jam (.hwt), ganti yang aktif, atau hapus.",
+    load: { wf: "listWatchfaces", fp: "getPickedWatchface" },
+    items: [
+      { t: "note", warn: true, text: "Belum diuji di jam asli. Pasang satu wajah jam dulu dan pastikan jam menampilkannya sebelum menghapus yang lain." },
+      { t: "faces", need: ["wf"], src: "wf", label: "Wajah jam di jam" },
+      { t: "facepick", need: ["wf"], src: "fp", wf: "wf", label: "Pasang wajah jam baru",
+        hint: "Pilih berkas .hwt dari HP (paling banyak 64 MB). Jam bisa menolak wajah yang tidak cocok dengan layarnya." }
+    ]
+  },
+  {
+    id: "foto-jam", title: "Foto jam",
+    sub: "Foto di wajah jam jenis Galeri.",
+    load: { ph: "getPhotoFace" },
+    items: [
+      { t: "note", warn: true, text: "Belum diuji di jam asli. Perlu wajah jam foto (mis. Galeri) yang sudah terpasang di jam." },
+      { t: "photos", need: ["ph"], src: "ph", label: "Foto",
+        hint: "Foto dipotong dari tengah dan diperkecil ke ukuran layar jam. Arah foto (EXIF) tidak dibaca." }
+    ]
+  },
+  {
+    id: "kustom-wajah", title: "Kustomisasi wajah",
+    sub: "Gaya, warna, dan widget wajah jam yang bisa disesuaikan.",
+    load: { wf: "listWatchfaces" },
+    items: [
+      { t: "note", warn: true, text: "Eksperimental. Jam hanya melaporkan nomor pilihan yang dipakai, bukan daftar pilihannya (nomor mulai dari 0). Ubah satu nomor, ketuk Terapkan, lalu lihat jam. Jam yang tidak menjawab berarti wajah itu tidak punya pilihan." },
+      { t: "facecustom", need: ["wf"], src: "wf", label: "Wajah jam" }
+    ]
+  },
+  {
+    id: "keselamatan", title: "Keselamatan",
+    sub: "Deteksi jatuh di jam.",
+    load: { sf: "getSafety" },
+    items: [
+      { t: "note", warn: true, text: "Belum diuji di jam asli. Relai SOS lewat SMS tidak tersedia di aplikasi ini (izin SMS dibuang)." },
+      { t: "note", need: ["sf"], vis: function (s) { return !s.sf.fallSupported; }, text: function (s) { return "Deteksi jatuh tidak bisa dipakai sekarang: " + s.sf.fallNote; } },
+      { t: "switch", need: ["sf"], vis: function (s) { return !!s.sf.fallSupported; }, label: "Deteksi jatuh",
+        hint: function (s) { return s.sf.fallUpdatedMs ? "Terakhir dilaporkan jam: " + agoText(s.sf.fallUpdatedMs) + "." : "Jam belum melaporkan keadaannya."; },
+        val: function (s) { return s.sf.fallSwitch === 1; }, m: "setFallDetection", reload: true,
+        done: function (s, r) { return r && r.sent ? "Dikirim ke jam." : "Tidak terkirim ke jam."; } },
+      { t: "button", need: ["sf"], vis: function (s) { return !!s.sf.fallSupported; }, plain: true, label: "Tanya keadaan ke jam", m: "queryFallDetection", reload: true,
+        done: "Pertanyaan dikirim. Buka layar ini lagi untuk melihat jawaban jam." }
+    ]
+  },
+  {
+    id: "tidur-siklus", title: "Tidur dan siklus",
+    sub: "Laporan tidur pagi dan kalender haid di jam.",
+    load: { sf: "getSafety", cy: "getCycle" },
+    items: [
+      { t: "note", warn: true, text: "Belum diuji di jam asli." },
+      { t: "switch", need: ["sf"], vis: function (s) { return !!s.sf.sleepReportSupported; }, label: "Laporan tidur pagi",
+        hint: "Setelah sinkron pagi, jam menampilkan ringkasan tidur semalam.", val: function (s) { return s.sf.sleepReportEnabled; }, m: "setSleepReportEnabled", into: "sf" },
+      { t: "note", need: ["sf"], vis: function (s) { return !s.sf.sleepReportSupported; }, text: "Jam ini tidak mendukung laporan tidur dari HP." },
+      { t: "button", need: ["sf"], vis: function (s) { return !!s.sf.sleepReportSupported; }, plain: true, label: "Kirim laporan tidur sekarang", m: "sendSleepReportNow",
+        done: function (s, r) { return r && r.result === "sent" ? "Laporan dikirim." : "Tidak dikirim: " + (r ? r.result : "tanpa jawaban"); } },
+      { t: "switch", need: ["cy"], label: "Kalender haid di jam", val: function (s) { return s.cy.enabled; }, m: "setCycleEnabled", into: "cy" },
+      { t: "note", need: ["cy"], vis: function (s) { return !s.cy.watchSupported; }, warn: true, text: function (s) { return "Jam: " + s.cy.watchNote; } },
+      { t: "note", need: ["cy"], text: function (s) {
+          var c = s.cy, nx = c.predictions && c.predictions[0];
+          return "Rata-rata siklus " + c.averageCycleDays + " hari, haid " + c.averagePeriodDays + " hari." + (c.periodOngoing ? " Haid sedang berlangsung." : "") +
+            (nx ? " Perkiraan haid berikutnya: " + nx.start + "." : " Belum cukup data untuk perkiraan."); } },
+      { t: "form", need: ["cy"], vis: function (s) { return !!s.cy.enabled; }, label: "Pengingat di jam", btn: "Simpan pengingat", m: "setCycleSwitches", into: "cy",
+        fields: [
+          { k: "master", t: "check", label: "Semua pengingat", val: function (s) { return s.cy.switches.master; } },
+          { k: "periodStart", t: "check", label: "Haid mulai", val: function (s) { return s.cy.switches.periodStart; } },
+          { k: "periodEnd", t: "check", label: "Haid selesai", val: function (s) { return s.cy.switches.periodEnd; } },
+          { k: "fertileStart", t: "check", label: "Masa subur mulai", val: function (s) { return s.cy.switches.fertileStart; } },
+          { k: "fertileEnd", t: "check", label: "Masa subur selesai", val: function (s) { return s.cy.switches.fertileEnd; } },
+          { k: "easyPregnancy", t: "check", label: "Mudah hamil", val: function (s) { return s.cy.switches.easyPregnancy; } }
+        ],
+        pack: function (v) { return v; } },
+      { t: "buttons", need: ["cy"], vis: function (s) { return !!s.cy.enabled; }, label: "Catatan hari ini",
+        list: function (s) { return [
+          { label: "Haid mulai hari ini", m: "startPeriod", args: [s.cy.today], done: "Tercatat.", reload: true },
+          { label: "Haid selesai hari ini", m: "endPeriod", args: [s.cy.today], done: "Tercatat.", reload: true }
+        ]; } },
+      { t: "form", need: ["cy"], vis: function (s) { return !!s.cy.enabled; }, label: "Gejala hari ini", hint: "0 = tidak ada, 3 = banyak atau berat.", btn: "Catat", m: "logCycleDay", into: "cy", spread: true,
+        fields: [
+          { k: "flow", t: "number", label: "Aliran (0 sampai 3)", min: 0, max: 3, val: function () { return 0; } },
+          { k: "cramps", t: "number", label: "Kram (0 sampai 3)", min: 0, max: 3, val: function () { return 0; } }
+        ],
+        pack: function (v) { return [S.cy.today, v.flow, v.cramps]; } },
+      { t: "text", need: ["cy"], vis: function (s) { return !!s.cy.enabled; }, label: "Hapus catatan haid", hint: "Isi tanggal mulai haid yang mau dihapus (TTTT-BB-HH).",
+        ph: "mis. 2026-10-03", btn: "Hapus", m: "deletePeriod", into: "cy", min: 10, max: 10, done: "Catatan dihapus." }
+    ]
+  },
+  {
+    id: "target", title: "Target dan bodi",
+    sub: "Target cincin aktivitas dan data tubuh yang dikirim ke jam.",
+    load: { g: "getActivityGoals", b: "getBodyMetrics" },
+    items: [
+      { t: "note", warn: true, text: "Belum diuji di jam asli (format berasal dari analisis Huawei Health)." },
+      { t: "note", need: ["g"], text: function (s) { return s.g.configSupported === null ? "Jam belum tersambung: target disimpan di HP dan dikirim saat tersambung." : s.g.configSupported ? "Jam menerima target dari HP." : "Jam ini tidak melaporkan dukungan target dari HP."; } },
+      { t: "form", need: ["g"], label: "Target harian", btn: "Simpan dan kirim", m: "setActivityGoals", into: "g",
+        fields: [
+          { k: "steps", t: "number", label: "Langkah", min: 1000, max: 100000, val: function (s) { return s.g.steps; } },
+          { k: "calories", t: "number", label: "Kalori aktif (kkal)", min: 50, max: 10000, val: function (s) { return s.g.calories; } },
+          { k: "exerciseMinutes", t: "number", label: "Olahraga (menit)", min: 1, max: 600, val: function (s) { return s.g.exerciseMinutes; } },
+          { k: "standHours", t: "number", label: "Berdiri (jam)", min: 1, max: 24, val: function (s) { return s.g.standHours; } },
+          { k: "remindStand", t: "check", label: "Ingatkan berdiri", val: function (s) { return s.g.remindStand; } },
+          { k: "remindProgress", t: "check", label: "Ingatkan kemajuan", val: function (s) { return s.g.remindProgress; } },
+          { k: "remindGoalReached", t: "check", label: "Kabari saat tercapai", val: function (s) { return s.g.remindGoalReached; } }
+        ],
+        pack: function (v) { return v; },
+        done: function (s, r) { return r && r.sent ? "Tersimpan dan dikirim ke jam." : "Tersimpan. Dikirim saat jam tersambung."; } },
+      { t: "button", need: ["g"], plain: true, label: "Kirim ulang target ke jam", m: "sendActivityGoals",
+        done: function (s, r) { return r && r.sent ? "Dikirim." : "Tidak terkirim. Cek koneksi jam."; } },
+      { t: "form", need: ["b"], label: "Berat dan lemak tubuh", btn: "Simpan", m: "setBodyMetrics", into: "b",
+        fields: [
+          { k: "weightKg", t: "number", label: "Berat (kg)", min: 20, max: 300, step: 0.1, val: function (s) { return s.b.weightKg || 70; } },
+          { k: "bodyFatPct", t: "number", label: "Lemak tubuh (%)", min: 2, max: 70, step: 0.1, val: function (s) { return s.b.bodyFatPct || 20; } }
+        ],
+        pack: function (v) { return v; }, done: "Tersimpan dan dikirim ke jam bila tersambung." },
+      { t: "form", need: ["b"], label: "Metabolisme istirahat", btn: "Simpan", m: "setBodyMetrics", into: "b",
+        fields: [{ k: "restingKcal", t: "number", label: "BMR (kkal per hari)", min: 500, max: 5000, val: function (s) { return s.b.restingKcal || 1500; } }],
+        pack: function (v) { return v; }, done: "Tersimpan." },
+      { t: "form", need: ["b"], label: "Tekanan darah", btn: "Simpan", m: "setBodyMetrics", into: "b",
+        fields: [
+          { k: "systolic", t: "number", label: "Sistolik", min: 60, max: 250, val: function (s) { return s.b.systolic || 120; } },
+          { k: "diastolic", t: "number", label: "Diastolik", min: 30, max: 150, val: function (s) { return s.b.diastolic || 80; } }
+        ],
+        pack: function (v) { return v; }, done: "Tersimpan." }
+    ]
+  },
+  {
+    id: "latihan-jam", title: "Latihan dari jam",
+    sub: "Mulai, jeda, lanjut, dan hentikan latihan di jam dari HP.",
+    load: { w: "getWatchWorkout" },
+    items: [
+      { t: "note", warn: true, text: "Eksperimental dan belum diuji di jam asli. Jam harus dipakai di pergelangan." },
+      { t: "note", need: ["w"], vis: function (s) { return !s.w.supported; }, warn: true, text: "Jam belum tersambung atau tidak mendukung kendali latihan dari HP." },
+      { t: "note", need: ["w"], vis: function (s) { return !!s.w.active; }, text: function (s) { return "Latihan dari HP berjalan (jenis " + s.w.sport + ", " + (s.w.state === "paused" ? "dijeda" : "berjalan") + ")."; } },
+      { t: "form", need: ["w"], vis: function (s) { return !!s.w.supported && !s.w.active; }, label: "Mulai latihan", btn: "Mulai di jam", m: "startWatchWorkout", reload: true, timeout: 60000,
+        fields: [{ k: "sport", t: "select", label: "Jenis", val: function () { return "1"; },
+          opts: [["1", "Lari"], ["5", "Lari dalam ruangan"], ["11", "Lari trail"], ["2", "Jalan"], ["13", "Jalan dalam ruangan"], ["14", "Hiking"], ["3", "Sepeda"], ["7", "Sepeda statis"], ["6", "Renang kolam"], ["21", "Lompat tali"]] }],
+        pack: function (v) { return Number(v.sport); },
+        done: function (s, r) {
+          var o = r && r.outcome;
+          if (o === "confirmed") return "Jam menjalankan latihan.";
+          if (o === "refused") return "Jam menolak" + (r.worn === false ? " (jam tidak sedang dipakai)." : ".");
+          return "Perintah terkirim. Cek jam. (" + o + ")";
+        } },
+      { t: "buttons", need: ["w"], vis: function (s) { return !!s.w.active; }, label: "Kendali",
+        list: [
+          { label: "Jeda", m: "pauseWatchWorkout", done: "Perintah jeda terkirim.", reload: true },
+          { label: "Lanjut", m: "resumeWatchWorkout", done: "Perintah lanjut terkirim.", reload: true },
+          { label: "Selesai", m: "stopWatchWorkout", done: "Perintah selesai terkirim.", reload: true }
+        ] }
+    ]
+  },
+  {
     id: "kesehatan", title: "Sensor kesehatan",
     sub: "Pengukuran otomatis di jam dan batas detak jantung.",
     load: { h: "getHealthSensors", st: "getStressStatus" },
@@ -717,9 +874,9 @@ var KIND = {
     var row = el("div", "row col");
     row.appendChild(labelBox(it));
     var box = el("div", "btns");
-    it.list.forEach(function (x) {
+    (typeof it.list === "function" ? it.list(S) : it.list).forEach(function (x) {
       var b = el("button", "btn g", x.label); b.type = "button";
-      b.onclick = function () { save(g, { m: x.m, args: x.args, done: x.done }, []); };
+      b.onclick = function () { save(g, { m: x.m, args: x.args, done: x.done, reload: x.reload }, []); };
       box.appendChild(b);
     });
     row.appendChild(box);
@@ -760,7 +917,8 @@ var KIND = {
         }
         v[f.k] = n;
       }
-      save(g, it, [it.pack(v)]);
+      var pk = it.pack(v);
+      save(g, it, it.spread ? pk : [pk]);
     };
     row.appendChild(b);
     return row;
@@ -1108,6 +1266,183 @@ var KIND = {
     row.appendChild(res); row.appendChild(tick); row.appendChild(box);
     return row;
   }
+};
+
+/* ---------- Langkah 7: tampilan jam ---------- */
+function act(g, method, args, done, timeout) {
+  return save(g, { m: method, args: args || [], done: done, timeout: timeout, reload: true }, []);
+}
+function faceFlags(f) {
+  var x = [];
+  if (f.active) x.push("aktif");
+  if (f.factory) x.push("bawaan");
+  if (f.editable) x.push("bisa disesuaikan");
+  if (f.photo) x.push("foto");
+  if (f.video) x.push("video");
+  if (f.tryout) x.push("uji coba");
+  return x.join(", ");
+}
+function btn(label, cls, on) {
+  var b = el("button", "btn" + (cls ? " " + cls : ""), label); b.type = "button"; b.onclick = on; return b;
+}
+/* Tombol dua ketukan (ketuk kedua dalam 5 detik) untuk hapus. */
+function confirmBtn(label, sure, on) {
+  var b = btn(label, "dg", function () {
+    if (!b.dataset.armed) {
+      b.dataset.armed = "1"; b.textContent = sure;
+      setTimeout(function () { if (b.isConnected) { delete b.dataset.armed; b.textContent = label; } }, 5000);
+      return;
+    }
+    on();
+  });
+  return b;
+}
+window.__upTick = function (done, total) {
+  var e = document.getElementById("upl");
+  if (e) e.textContent = "Mengirim ke jam: " + Math.round(done * 100 / Math.max(1, total)) + "%. Jangan tutup layar ini.";
+};
+var MODE_NAMA = ["Gaya", "Latar", "Ganda", "Skala", "Simbol", "Huruf", "Waktu", "Jarum"];
+
+KIND.faces = function (g, it) {
+  var w = S[it.src], row = el("div", "row col");
+  row.appendChild(labelBox(it));
+  var sz = w.width && w.height ? "Layar jam " + w.width + " x " + w.height + ". " : "";
+  row.appendChild(el("small", "", sz + w.faces.length + " wajah jam.")).style.color = "var(--mt)";
+  w.faces.forEach(function (f) {
+    var c = el("div", "stp");
+    c.appendChild(el("b", "", f.name || f.id));
+    c.appendChild(el("small", "", "Id " + f.id + (f.version ? " v" + f.version : "") + (faceFlags(f) ? " | " + faceFlags(f) : ""))).style.color = "var(--mt)";
+    var box = el("div", "btns");
+    if (!f.active) box.appendChild(btn("Aktifkan", "g", function () { act(g, "setActiveWatchface", [f.id], "Wajah jam diaktifkan.", 60000); }));
+    if (!f.active && !f.factory) box.appendChild(confirmBtn("Hapus", "Ketuk lagi untuk menghapus", function () { act(g, "deleteWatchface", [f.id], "Wajah jam dihapus.", 60000); }));
+    if (box.firstChild) c.appendChild(box);
+    row.appendChild(c);
+  });
+  return row;
+};
+
+KIND.facepick = function (g, it) {
+  var p = S[it.src], w = S[it.wf], row = el("div", "row col");
+  row.appendChild(labelBox(it));
+  if (p) {
+    var c = el("div", "stp");
+    if (p.preview) {
+      var im = el("img"); im.src = p.preview; im.alt = "Pratinjau wajah jam";
+      im.style.cssText = "max-width:160px;max-height:240px;border-radius:12px;align-self:center";
+      c.appendChild(im);
+    }
+    c.appendChild(el("b", "", p.title || p.fileName));
+    var bits = [p.fileName, p.author ? "oleh " + p.author : "", p.version ? "v" + p.version : "", Math.max(1, Math.round(p.sizeBytes / 1024)) + " KB",
+      p.width && p.height ? "layar " + p.width + " x " + p.height : ""].filter(Boolean);
+    c.appendChild(el("small", "", bits.join(" | "))).style.color = "var(--mt)";
+    if (p.description) c.appendChild(el("small", "", p.description)).style.color = "var(--mt)";
+    if (p.width && p.height && w.width && w.height && (p.width !== w.width || p.height !== w.height)) {
+      c.appendChild(el("small", "", "Ukuran layar wajah ini berbeda dari jam (" + w.width + " x " + w.height + "). Jam mungkin menolaknya.")).style.color = "var(--wn)";
+    }
+    row.appendChild(c);
+    var st = el("small", "", ""); st.id = "upl"; st.style.color = "var(--mt)"; row.appendChild(st);
+    var box = el("div", "btns");
+    box.appendChild(btn("Pasang ke jam", "", function () {
+      st.textContent = "Menyiapkan\u2026";
+      act(g, "installWatchface", [], function (s, r) {
+        if (!r) return "Selesai.";
+        return (r.listed ? "Terpasang" + (r.active ? " dan aktif" : "") + ". " : "Belum terdaftar di jam. ") + (r.message || "");
+      }, 600000);
+    }));
+    box.appendChild(btn("Pilih berkas lain", "g", function () { act(g, "parseWatchfacePackage", [], "Berkas dibaca.", 300000); }));
+    box.appendChild(btn("Buang berkas", "g", function () { act(g, "deleteLocalWatchfaceFile", [], "Berkas dibuang dari HP."); }));
+    row.appendChild(box);
+  } else {
+    row.appendChild(btn("Pilih berkas wajah jam (.hwt)", "", function () { act(g, "parseWatchfacePackage", [], "Berkas dibaca.", 300000); }));
+  }
+  return row;
+};
+
+KIND.photos = function (g, it) {
+  var ph = S[it.src], row = el("div", "row col");
+  row.appendChild(labelBox(it));
+  var n = ph.photos.length;
+  row.appendChild(el("small", "", "Layar jam " + ph.width + " x " + ph.height + ". " + n + (ph.maxPhotos > 0 ? " dari " + ph.maxPhotos : "") + " foto.")).style.color = "var(--mt)";
+  if (ph.applyError) row.appendChild(el("small", "", ph.applyError)).style.color = "var(--wn)";
+  var grid = el("div", "btns");
+  ph.photos.forEach(function (x) {
+    var c = el("div", "stp"); c.style.flex = "1 1 140px";
+    if (x.thumb) {
+      var im = el("img"); im.src = x.thumb; im.alt = "Foto " + (x.index + 1);
+      im.style.cssText = "width:100%;max-height:160px;object-fit:contain;border-radius:10px;background:#000";
+      c.appendChild(im);
+    } else {
+      c.appendChild(el("small", "", "Foto " + (x.index + 1) + " (pratinjau tidak tersedia; foto ini bukan dari HP ini).")).style.color = "var(--mt)";
+    }
+    c.appendChild(confirmBtn("Hapus", "Ketuk lagi", function () { act(g, "deletePhoto", [x.name], "Foto dihapus.", 120000); }));
+    grid.appendChild(c);
+  });
+  if (n) row.appendChild(grid);
+  var full = ph.maxPhotos > 0 && n >= ph.maxPhotos;
+  var box = el("div", "btns");
+  var add = btn(full ? "Foto sudah penuh" : "Tambah foto", "", function () {
+    act(g, "addPhoto", [], function (s, r) { return r && r.applyError ? "Foto ditambah, tetapi " + r.applyError : "Foto ditambahkan."; }, 180000);
+  });
+  add.disabled = full;
+  box.appendChild(add);
+  if (ph.face && !ph.face.active) box.appendChild(btn("Aktifkan wajah foto", "g", function () { act(g, "setPhotoFaceActive", [], "Wajah foto diaktifkan.", 60000); }));
+  row.appendChild(box);
+  return row;
+};
+
+KIND.facecustom = function (g, it) {
+  var w = S[it.src], row = el("div", "row col"), cfg = null;
+  row.appendChild(labelBox(it));
+  var faces = w.faces.filter(function (f) { return !f.photo && !f.video; });
+  if (!faces.length) { row.appendChild(el("small", "", "Tidak ada wajah jam yang bisa disesuaikan.")).style.color = "var(--mt)"; return row; }
+  var sel = el("select"); sel.setAttribute("aria-label", "Pilih wajah jam"); sel.style.width = "100%";
+  faces.forEach(function (f) {
+    var op = el("option", "", (f.name || f.id) + (f.active ? " (aktif)" : "")); op.value = f.id;
+    if (f.active) op.selected = true;
+    sel.appendChild(op);
+  });
+  row.appendChild(sel);
+  var box = el("div", "frm");
+  function field(label, type, val, on, max) {
+    var line = el("label", "fld"); line.appendChild(el("span", "", label));
+    var c = el("input"); c.type = type; if (type === "number") { c.inputMode = "numeric"; c.min = 0; c.max = max; }
+    c.value = val == null ? "" : val; c.style.width = "132px"; c.setAttribute("aria-label", label);
+    c.onchange = function () { on(c.value.trim()); };
+    line.appendChild(c); box.appendChild(line);
+  }
+  function whole(v, max) { var n = Number(v); return v !== "" && isFinite(n) && Math.floor(n) === n && n >= 0 && n <= max ? n : null; }
+  function draw() {
+    box.textContent = "";
+    if (!cfg) return;
+    var any = false;
+    cfg.styles.forEach(function (s) {
+      any = true; field((MODE_NAMA[s.mode] || "Mode " + s.mode) + " (nomor)", "number", s.index, function (v) { var n = whole(v, 255); if (n != null) s.index = n; }, 255);
+    });
+    if (cfg.colourIndex != null) { any = true; field("Warna (nomor)", "number", cfg.colourIndex, function (v) { var n = whole(v, 255); if (n != null) cfg.colourIndex = n; }, 255); }
+    if (cfg.customColour != null) { any = true; field("Warna sendiri", "text", cfg.customColour, function (v) { cfg.customColour = v; }); }
+    cfg.widgets.forEach(function (x, i) {
+      any = true; field("Widget " + (i + 1) + " (nomor)", "number", x, function (v) { var n = whole(v, 255); if (n != null) cfg.widgets[i] = n; }, 255);
+    });
+    if (!any) { box.appendChild(el("small", "", "Wajah ini tidak melaporkan pilihan yang bisa diubah.")).style.color = "var(--mt)"; return; }
+    box.appendChild(btn("Terapkan ke jam", "", function () {
+      if (busy) return;
+      setBusy(true);
+      rn("applyFaceCustomization", [cfg], 60000).then(function (r) {
+        if (r && r.config) cfg = r.config;
+        toast(r && r.message ? r.message : "Terkirim.", !(r && r.ok));
+        draw();
+      }).catch(function (e) { toast(e.message, true); }).then(function () { setBusy(false); });
+    }));
+  }
+  var rd = btn("Baca pilihan dari jam", "g", function () {
+    if (busy) return;
+    setBusy(true);
+    rn("getFaceCustomization", [sel.value], 30000).then(function (r) { cfg = r; draw(); })
+      .catch(function (e) { cfg = null; draw(); toast(e.message, true); }).then(function () { setBusy(false); });
+  });
+  sel.onchange = function () { cfg = null; draw(); };
+  row.appendChild(rd); row.appendChild(box);
+  return row;
 };
 
 function renderList() {
