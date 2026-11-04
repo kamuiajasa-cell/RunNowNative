@@ -85,6 +85,9 @@ abstract class BridgeActivity : ComponentActivity() {
     /** Hook untuk menambah antarmuka JS lain ke WebView. */
     protected open fun onWebCreated(web: WebView) {}
 
+    /** Halaman selesai dimuat. */
+    protected open fun onPageLoaded() {}
+
     /** Detak jantung live hanya diminta dari jam oleh layar yang memakainya. */
     protected open fun wantsLiveHr(): Boolean = false
 
@@ -118,6 +121,10 @@ abstract class BridgeActivity : ComponentActivity() {
             webViewClient = object : WebViewClient() {
                 override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
                     loader.shouldInterceptRequest(request.url)
+
+                override fun onPageFinished(view: WebView, url: String?) {
+                    onPageLoaded()
+                }
 
                 // Hanya halaman bawaan yang dibuka di sini; tautan lain dibuka di browser.
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {

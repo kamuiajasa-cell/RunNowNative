@@ -171,12 +171,18 @@ var G = [
   {
     id: "sinkron", title: "Sinkron dan latar belakang",
     sub: "Kapan data jam diambil, dan agar tetap jalan saat aplikasi ditutup.",
-    load: { b: "getBackgroundStatus", r: "getBackgroundRestrictions" },
+    load: { b: "getBackgroundStatus", r: "getBackgroundRestrictions", wi: "getWatchImportSummary" },
     items: [
       { t: "note", need: ["b"], text: function (s) {
           return s.b.address ? (s.b.name || "Jam") + (s.b.running ? ", berjalan" : s.b.paused ? ", dijeda" : "")
                              : "Belum ada jam yang diingat. Hubungkan jam dulu lewat Koneksi jam."; } },
-      { t: "button", label: "Sinkron sekarang", m: "syncNow", timeout: 300000, done: "Sinkron selesai.", reload: true },
+      { t: "button", label: "Sinkron sekarang", m: "syncNow", timeout: 300000, done: "Sinkron selesai. Data jam dikirim ke halaman utama.", reload: true },
+      { t: "note", need: ["wi"], text: function (s) {
+          var w = s.wi;
+          if (!w.available) return "Belum ada data jam di HP ini. Sinkron dulu.";
+          if (!w.wellnessDays && !w.acts && !w.workouts) return "Database jam masih kosong: 0 hari wellness, 0 aktivitas. Kirim laporan dukungan bila jam sudah menampilkan data.";
+          return "Siap dikirim ke halaman utama: " + w.wellnessDays + " hari wellness, " + w.acts + " aktivitas, " + w.workouts + " latihan (" + w.withRoute + " dengan rute).";
+        } },
       { t: "switch", need: ["b"], label: "Sinkron tetap jalan saat aplikasi ditutup", hint: "Perlu izin notifikasi dan Bluetooth.",
         val: function (s) { return s.b.enabled; }, m: "setBackgroundEnabled", into: "b" },
       { t: "select", need: ["b"], label: "Sinkron tiap",

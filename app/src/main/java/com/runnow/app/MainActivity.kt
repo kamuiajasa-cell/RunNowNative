@@ -11,7 +11,13 @@ class MainActivity : BridgeActivity() {
 
     // Notifikasi pengingat: Android.setPlan dan Android.test.
     override fun onWebCreated(web: WebView) {
+        // Halaman utama menerima data jam (wellness, aktivitas, latihan) lewat window.nativeImport.
+        bridge.pushesWatchData = true
         web.addJavascriptInterface(AndroidBridge(applicationContext) { askNotificationPermission() }, "Android")
+    }
+
+    override fun onPageLoaded() {
+        bridge.pushWatchData()
     }
 
     override fun wantsLiveHr(): Boolean = true

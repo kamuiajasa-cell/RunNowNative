@@ -94,7 +94,9 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
   private val listener = object : WearEvents {
     override fun state(state: LinkState, error: String?) = Unit
     override fun battery(level: Int) = Unit
-    override fun syncComplete(summary: SyncSummary) = Unit
+    override fun syncComplete(summary: SyncSummary) {
+      if (pushesWatchData) pushWatchData()
+    }
     override fun log(direction: LogDirection, serviceId: Int?, commandId: Int?, hex: String?, message: String) = Unit
 
     override fun hrvProgress(secondsLeft: Int, beats: Int) {
@@ -103,6 +105,30 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
 
     override fun heartRate(bpm: Int, tsMs: Long) {
       host.eval("window.nativeLiveHr&&window.nativeLiveHr($bpm,$tsMs);")
+    }
+  }
+
+  /** Hanya bridge milik halaman utama (index.html) yang mengirim data jam; MainActivity menyalakannya. */
+  @Volatile
+  var pushesWatchData: Boolean = false
+
+  /**
+   * Kirim data jam (wellness, aktivitas, latihan) ke halaman lewat `window.nativeImport`. Dipanggil setelah halaman selesai
+   * dimuat dan setelah tiap sinkron. Tanpa database jam atau tanpa data, tidak mengirim apa-apa. Aman dipanggil dari thread mana pun.
+   */
+  fun pushWatchData() {
+    scope.launch(Dispatchers.IO) {
+      try {
+        val r = WatchImport.build(app) ?: return@launch
+        if (r.wellnessDays == 0 && r.acts == 0 && r.workouts == 0) return@launch
+        // Pemisah baris Unicode sah di JSON tetapi memutus literal JavaScript.
+        val js = r.json.toString().replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
+        host.eval("window.nativeImport&&window.nativeImport($js);")
+      } catch (e: CancellationException) {
+        throw e
+      } catch (_: Exception) {
+        // database jam belum terbaca: dicoba lagi pada sinkron berikutnya
+      }
     }
   }
 
@@ -205,6 +231,19 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
     t.m("getMorningSummaryEnabled") { runtime.morningSummaryEnabled() }
     t.m("setLiveHeartRate", BOOL) { a -> runtime.liveHeartRate.setActive(a[0] as Boolean); null }
     t.m("getSupportReport") { runtime.supportReport() }
+    // Apa yang akan dikirim ke halaman utama; untuk memeriksa bahwa sinkron benar-benar mengisi database jam.
+    t.m("getWatchImportSummary") {
+      withContext(Dispatchers.IO) {
+        val r = WatchImport.build(app)
+        mapOf(
+          "available" to (r != null),
+          "wellnessDays" to (r?.wellnessDays ?: 0),
+          "acts" to (r?.acts ?: 0),
+          "workouts" to (r?.workouts ?: 0),
+          "withRoute" to (r?.withRoute ?: 0),
+        )
+      }
+    }
     t.m("refreshBattery") {
       requireConnected()
       mapOf("level" to runtime.link.refreshBattery())
