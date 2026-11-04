@@ -2,6 +2,7 @@ package com.runnow.app
 
 import android.os.Build
 import android.webkit.WebView
+import com.joyodigitama.huaweiwear.WatchDataSignal
 
 /** Layar utama: index.html di dalam WebView, ditambah jembatan ke Huawei core. */
 class MainActivity : BridgeActivity() {
@@ -18,6 +19,12 @@ class MainActivity : BridgeActivity() {
 
     override fun onPageLoaded() {
         bridge.pushWatchData()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Setelah impor ekspor Huawei (di layar pengaturan) isi database jam berubah: kirim ulang ke halaman.
+        if (WatchDataSignal.take()) bridge.pushWatchData()
     }
 
     override fun wantsLiveHr(): Boolean = true

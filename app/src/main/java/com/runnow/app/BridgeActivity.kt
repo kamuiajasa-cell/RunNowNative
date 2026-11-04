@@ -14,8 +14,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.webkit.WebViewAssetLoader
+import com.joyodigitama.huaweiwear.HealthConnectPermissions
 import com.joyodigitama.huaweiwear.HuaweiWatch
 import com.joyodigitama.huaweiwear.PickedFile
+import com.joyodigitama.huaweiwear.PickedUri
 import com.joyodigitama.huaweiwear.RunNowBridge
 import com.joyodigitama.huaweiwear.RunNowHost
 import kotlinx.coroutines.CompletableDeferred
@@ -42,6 +44,13 @@ abstract class BridgeActivity : ComponentActivity() {
         picking?.complete(uri)
     }
 
+    private var asking: CompletableDeferred<Set<String>>? = null
+
+    // Izin tulis Health Connect: dialog milik Health Connect, hasilnya izin yang sekarang diberikan.
+    private val healthConnect = registerForActivityResult(HealthConnectPermissions()) { granted ->
+        asking?.complete(granted)
+    }
+
     protected val host: RunNowHost = object : RunNowHost {
         override suspend fun ask(required: List<String>, optional: List<String>): Boolean {
             val missing = (required + optional).filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
@@ -60,6 +69,32 @@ abstract class BridgeActivity : ComponentActivity() {
 
         override fun eval(js: String) {
             runOnUiThread { if (::web.isInitialized) web.evaluateJavascript(js, null) }
+        }
+
+        override suspend fun pickUri(mime: String): PickedUri? {
+            val done = CompletableDeferred<Uri?>()
+            withContext(Dispatchers.Main) {
+                picking = done
+                picker.launch(mime)
+            }
+            val uri = done.await() ?: return null
+            return PickedUri(uri.toString(), withContext(Dispatchers.IO) { displayName(uri) })
+        }
+
+        override fun keepScreenOn(on: Boolean) {
+            runOnUiThread {
+                if (on) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
+
+        override suspend fun requestHealthConnect(permissions: Set<String>): Set<String> {
+            val done = CompletableDeferred<Set<String>>()
+            withContext(Dispatchers.Main) {
+                asking = done
+                healthConnect.launch(permissions)
+            }
+            return done.await()
         }
 
         override suspend fun pickFile(mime: String): PickedFile? {

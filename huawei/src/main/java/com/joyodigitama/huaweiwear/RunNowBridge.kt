@@ -1,7 +1,9 @@
 package com.joyodigitama.huaweiwear
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -10,6 +12,7 @@ import android.graphics.Matrix
 import android.graphics.Paint
 import android.os.Build
 import android.webkit.JavascriptInterface
+import androidx.health.connect.client.HealthConnectClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +24,9 @@ import org.json.JSONObject
 
 /** Berkas yang dipilih pengguna lewat pemilih berkas sistem. */
 class PickedFile(val name: String, val mime: String?, val bytes: ByteArray)
+
+/** Berkas yang dipilih pengguna, hanya alamat (content://) dan nama; isinya belum dibaca. Untuk berkas besar. */
+class PickedUri(val uri: String, val name: String)
 
 /** Hal yang hanya bisa dilakukan Activity. Dipasang oleh aplikasi. */
 interface RunNowHost {
@@ -35,6 +41,15 @@ interface RunNowHost {
 
   /** Buka pemilih berkas sistem (mime mis. "application/octet-stream"; bintang-garis-miring-bintang untuk semua jenis) dan baca isinya. Null kalau dibatalkan. */
   suspend fun pickFile(mime: String): PickedFile?
+
+  /** Seperti [pickFile], tetapi hanya mengembalikan alamat dan nama berkas tanpa membaca isinya (ekspor Huawei yang bisa berukuran GB, lagu). Null kalau dibatalkan. */
+  suspend fun pickUri(mime: String): PickedUri?
+
+  /** Minta izin tulis Health Connect. Mengembalikan izin yang sekarang diberikan (tanpa izin yang ditolak). */
+  suspend fun requestHealthConnect(permissions: Set<String>): Set<String>
+
+  /** Tahan layar tetap menyala selama pekerjaan panjang (impor ekspor Huawei, kirim lagu ke jam). */
+  fun keepScreenOn(on: Boolean)
 }
 
 /**
@@ -71,6 +86,9 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
     addScreens(t)
     addFaces(t)
     addExtras(t)
+    addHealthConnect(t)
+    addImport(t)
+    addMusic(t)
   }
 
   private fun MutableMap<String, Rpc>.m(name: String, rule: Rule = NONE, call: suspend (List<Any?>) -> Any?) {
@@ -858,6 +876,149 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
     return out.toString().trim()
   }
 
+  // ---- Health Connect, impor ekspor Huawei, musik di jam (langkah 8 dan 9) ----
+
+  /** Kirim satu nilai ke fungsi global di halaman (mis. `window.__hwTick`); tidak berbuat apa-apa kalau fungsinya tidak ada. */
+  private fun emitJs(fn: String, value: Any?) {
+    val literal = (toJson(value) ?: JSONObject.NULL).toString().replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
+    host.eval("window.$fn&&window.$fn($literal);")
+  }
+
+  /** Berkas ZIP ekspor Huawei yang dipilih (alamat dan nama); isinya baru dibaca saat impor dijalankan. */
+  @Volatile
+  private var pickedExport: PickedUri? = null
+
+  private val importer by lazy {
+    HuaweiImportController(app, runtime.syncStore) { progress -> emitJs("__hwTick", progress) }
+  }
+
+  /** Health Connect (Google): salin data jam ke Health Connect supaya bisa dibaca aplikasi lain. Hanya menulis, tidak membaca. */
+  private fun addHealthConnect(t: MutableMap<String, Rpc>) {
+    val hc = runtime.healthConnect
+    t.m("getHealthConnectStatus") { hc.status() }
+    t.m("requestHealthConnectPermissions") {
+      healthConnectReady(hc)
+      val missing = hc.requiredPermissions() - hc.grantedPermissions()
+      if (missing.isNotEmpty()) host.requestHealthConnect(missing)
+      hc.status()
+    }
+    // Menyalakan juga langsung menyalin semua data yang sudah ada (bisa lama).
+    t.m("setHealthConnectEnabled", BOOL) { a ->
+      val on = a[0] as Boolean
+      if (on) {
+        healthConnectReady(hc)
+        if (hc.grantedPermissions().none { it in hc.requiredPermissions() }) {
+          throw IllegalStateException("Beri izin tulis Health Connect dulu.")
+        }
+      }
+      try {
+        hc.setEnabled(on)
+      } catch (e: WearException) {
+        throw IllegalStateException("Ekspor ke Health Connect gagal: ${e.message}", e)
+      }
+      hc.status()
+    }
+    t.m("backfillHealthConnect") {
+      healthConnectReady(hc)
+      if (!hc.settings.enabled) throw IllegalStateException("Nyalakan ekspor ke Health Connect dulu.")
+      try {
+        hc.backfill()
+      } catch (e: WearException) {
+        throw IllegalStateException("Ekspor ke Health Connect gagal: ${e.message}", e)
+      }
+    }
+    // Setelah dua kali ditolak Android tidak menampilkan dialog izin lagi; izin lalu diberikan di aplikasi Health Connect.
+    t.m("openHealthConnectSettings") {
+      try {
+        app.startActivity(Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+      } catch (_: ActivityNotFoundException) {
+        throw IllegalStateException("Pengaturan Health Connect tidak bisa dibuka di HP ini.")
+      }
+      null
+    }
+  }
+
+  private fun healthConnectReady(hc: HealthConnectExporter) {
+    when (hc.availability()) {
+      "available" -> Unit
+      "update-required" -> throw IllegalStateException("Aplikasi Health Connect perlu diperbarui lewat Play Store.")
+      else -> throw IllegalStateException("Health Connect tidak ada di HP ini. Di Android 13 ke bawah, pasang dari Play Store.")
+    }
+  }
+
+  /** Impor riwayat dari ekspor Privacy Centre Huawei (ZIP berkata sandi). Progres dikirim ke `window.__hwTick`. */
+  private fun addImport(t: MutableMap<String, Rpc>) {
+    t.m("getHuaweiExport") { mapOf("name" to pickedExport?.name, "running" to importer.isRunning) }
+    t.m("pickHuaweiExport") {
+      val p = host.pickUri("*/*") ?: throw IllegalStateException("Pemilihan berkas dibatalkan.")
+      pickedExport = p
+      mapOf("name" to p.name, "running" to importer.isRunning)
+    }
+    t.m("importHuaweiExport", PASSWORD) { a ->
+      val p = pickedExport ?: throw IllegalStateException("Pilih berkas ZIP ekspor Huawei dulu.")
+      val summary = try {
+        host.keepScreenOn(true)
+        importer.run(p.uri, a[0] as String)
+      } finally {
+        host.keepScreenOn(false)
+      }
+      // Database jam berubah di luar sinkron: halaman utama mengirim ulang datanya saat dibuka lagi.
+      WatchDataSignal.mark()
+      summary
+    }
+    t.m("cancelHuaweiImport") { importer.cancel(); null }
+    t.m("clearHuaweiExport") { pickedExport = null; null }
+  }
+
+  /** Lagu di jam (uji lab; lihat docs/watch-music.md di JoyoFit). Semua panggilan menolak selama saklar lab mati. */
+  private fun addMusic(t: MutableMap<String, Rpc>) {
+    val music = runtime.watchMusic
+    t.m("getWatchMusic") { music.status() }
+    t.m("setWatchMusicLab", BOOL) { a ->
+      music.setEnabled(a[0] as Boolean)
+      music.status()
+    }
+    t.m("watchMusicInfo") { requireConnected(); musicCall { music.info() } }
+    t.m("listWatchMusic") { requireConnected(); musicCall { music.list() } }
+    t.m("deleteWatchSongs", SONG_IDS) { a ->
+      requireConnected()
+      val arr = a[0] as JSONArray
+      musicCall { music.delete(List(arr.length()) { i -> arr.getInt(i) }) }
+    }
+    // Memilih berkas lalu langsung mengirim; progres lewat window.__upTick (sama dengan wajah jam).
+    t.m("uploadWatchSong") {
+      requireConnected()
+      if (music.status()["enabled"] != true) throw IllegalStateException("Nyalakan Musik di jam (uji lab) dulu.")
+      val p = host.pickUri("audio/*") ?: throw IllegalStateException("Pemilihan berkas dibatalkan.")
+      try {
+        host.keepScreenOn(true)
+        musicCall { music.upload(p.uri, p.name) }
+      } finally {
+        host.keepScreenOn(false)
+      }
+    }
+    t.m("cancelWatchMusicUpload") { mapOf("cancelled" to music.cancel()) }
+  }
+
+  private suspend fun <T> musicCall(block: suspend () -> T): T = try {
+    block()
+  } catch (e: WearException) {
+    throw IllegalStateException(musicMessage(e.message ?: e.errorCode), e)
+  }
+
+  /** Pesan galat musik dari inti jam (Inggris) ke Indonesia untuk kasus yang dikenal; sisanya apa adanya. */
+  private fun musicMessage(m: String): String = when {
+    m.contains("lab feature") -> "Musik di jam masih uji lab. Nyalakan saklarnya dulu."
+    m.contains("Not connected") -> "Jam belum tersambung. Sambungkan lewat layar Koneksi."
+    m.contains("does not list music storage") -> "Jam ini tidak mengumumkan penyimpanan lagu (25/04), jadi belum bisa menerima lagu."
+    m.contains("Another music operation") -> "Operasi musik lain sedang berjalan."
+    m.contains("140004") -> "Jam sudah penuh dengan lagu (kode 140004). Hapus satu lalu coba lagi."
+    m.contains("140008") -> "Lagu ini sudah ada di jam (kode 140008)."
+    m.contains("140009") -> "Ruang di jam tidak cukup untuk lagu ini (kode 140009)."
+    m.contains("MiB can be sent") -> "Lagu paling besar 64 MB."
+    else -> m
+  }
+
   /** Minta pengguna memilih berkas; dipakai pickRouteFile (langkah 6), wajah jam dan foto jam (langkah 7), dan nanti impor Huawei (langkah 8). */
   private suspend fun pick(mime: String): PickedFile =
     host.pickFile(mime) ?: throw IllegalStateException("Pemilihan berkas dibatalkan.")
@@ -1212,6 +1373,24 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
         "Daftar latihan harus berisi 1 sampai 200 waktu mulai."
       } else if ((0 until arr.length()).any { arr.opt(it) !is Number }) {
         "Waktu mulai latihan harus angka."
+      } else {
+        null
+      }
+    }
+
+    /** Kata sandi ZIP ekspor Huawei: satu teks, 1 sampai 256 karakter. Tidak dipangkas dan tidak dicatat. */
+    val PASSWORD = Rule { a ->
+      val p = a.singleOrNull() as? String
+      if (p != null && p.length in 1..256) null else "Kata sandi ZIP harus 1 sampai 256 karakter."
+    }
+
+    /** Daftar id lagu di jam: 1 sampai 500 bilangan bulat 0..65535. */
+    val SONG_IDS = Rule { a ->
+      val arr = a.singleOrNull() as? JSONArray
+      if (arr == null || arr.length() !in 1..500) {
+        "Pilih 1 sampai 500 lagu."
+      } else if ((0 until arr.length()).any { i -> val v = arr.opt(i); v !is Number || v.toDouble() != v.toInt().toDouble() || v.toInt() !in 0..0xFFFF }) {
+        "Id lagu harus bilangan bulat 0 sampai 65535."
       } else {
         null
       }

@@ -24,13 +24,12 @@ internal class HealthConnectRationaleActivity : Activity() {
   }
 
   private companion object {
-    const val RATIONALE = "JoyoFit copies the data your Huawei watch records (steps, distance, active " +
-      "energy, heart rate, resting heart rate, blood oxygen, sleep and workouts) into Health Connect, " +
-      "so that other apps you allow can read it.\n\n" +
-      "JoyoFit only writes to Health Connect. It never reads other apps' data. Writing to Health " +
-      "Connect does not send anything over the internet and the data is not shared with anyone; " +
-      "it is not used for advertising. Other JoyoFit features that use the internet (weather, the " +
-      "optional cloud) are described in the privacy policy at https://fit.joyorogo.com/privasi. " +
-      "You can switch the export off in JoyoFit's Settings, and delete what was written from Health Connect."
+    const val RATIONALE = "Run Now menyalin data yang dicatat jam Huawei Anda (langkah, jarak, energi aktif, " +
+      "detak jantung, detak istirahat, oksigen darah, tidur, dan latihan) ke Health Connect, supaya aplikasi " +
+      "lain yang Anda izinkan bisa membacanya.\n\n" +
+      "Run Now hanya menulis ke Health Connect dan tidak pernah membaca data aplikasi lain. Menulis ke Health " +
+      "Connect tidak mengirim apa pun lewat internet, data tidak dibagikan ke siapa pun, dan tidak dipakai " +
+      "untuk iklan. Anda bisa mematikan salinan ini di Pengaturan > Health Connect dalam Run Now, dan menghapus " +
+      "data yang sudah ditulis langsung dari aplikasi Health Connect."
   }
 }

@@ -54,10 +54,10 @@ input[type=checkbox]:after{content:"";position:absolute;top:3px;left:3px;width:2
 box-shadow:0 1px 3px #0004;transition:left .2s}
 input[type=checkbox]:checked{background:var(--pr)}
 input[type=checkbox]:checked:after{left:23px}
-select,input[type=number],input[type=text]{min-height:46px;padding:9px 12px;border:1.5px solid var(--ln);border-radius:14px;
+select,input[type=number],input[type=text],input[type=password]{min-height:46px;padding:9px 12px;border:1.5px solid var(--ln);border-radius:14px;
 background:var(--bg);font-weight:600;max-width:100%}
 select{flex:none;min-width:128px}
-input[type=number],input[type=text]{width:100%}
+input[type=number],input[type=text],input[type=password]{width:100%}
 .inline{display:flex;gap:8px;align-items:center}
 .btn{min-height:46px;padding:10px 16px;border-radius:14px;background:var(--pr);color:var(--cd);font-weight:700;text-align:center}
 :root[data-theme=dark] .btn{color:var(--bg)}
@@ -177,6 +177,9 @@ window.__hrvTick = function (n) {
      t: "facepick"  pilih berkas .hwt, pratinjau, dan Pasang ke jam. src: kunci load getPickedWatchface; wf: kunci load listWatchfaces (cek ukuran layar)
      t: "photos"    foto jam: kisi foto, Tambah (pemilih berkas), Hapus, Aktifkan wajah foto. src: kunci load berisi hasil getPhotoFace
      t: "facecustom" baca dan ubah pilihan wajah (gaya, warna, widget). src: kunci load berisi hasil listWatchfaces
+   Tambahan langkah 8 dan 9:
+     t: "hwimport"  impor ZIP ekspor Huawei (pilih berkas, kata sandi, progres lewat window.__hwTick, ringkasan, Batal). src: kunci load getHuaweiExport
+     t: "music"     lagu di jam: baca daftar, Tambah lagu (pilih berkas lalu kirim, progres lewat window.__upTick), Hapus. src: kunci load getWatchMusic
    Tambahan langkah 8: buttons.list boleh fungsi (s) => [{label, m, args, done, reload}]; form.spread: pack mengembalikan daftar argumen (bukan satu objek)
 */
 /* ---------- Langkah 6: pembantu data satelit (A-GPS) ---------- */
@@ -740,6 +743,73 @@ var G = [
       { t: "note", need: ["st"], vis: function (s) { return !s.st.supported; }, text: "Jam ini tidak mendukung pengukuran stres." },
       { t: "hrv" }
     ]
+  },
+  {
+    id: "health-connect", title: "Health Connect (Google)",
+    sub: "Salin data jam ke Health Connect supaya bisa dibaca aplikasi lain. Run Now hanya menulis, tidak pernah membaca data aplikasi lain.",
+    load: { hc: "getHealthConnectStatus" },
+    items: [
+      { t: "note", need: ["hc"], warn: true, vis: function (s) { return s.hc.availability !== "available"; },
+        text: function (s) {
+          return s.hc.availability === "update-required" ? "Aplikasi Health Connect perlu diperbarui lewat Play Store."
+            : "Health Connect tidak ada di HP ini. Di Android 13 ke bawah, pasang dari Play Store.";
+        } },
+      { t: "note", need: ["hc"], vis: function (s) { return s.hc.availability === "available"; },
+        text: function (s) {
+          var n = s.hc.granted.length, m = s.hc.missing.length;
+          return "Izin tulis: " + n + " dari " + (n + m) + (m ? ". Belum diberikan: " + s.hc.missing.join(", ") + "." : ". Lengkap.");
+        } },
+      { t: "button", need: ["hc"], vis: function (s) { return s.hc.availability === "available" && s.hc.missing.length > 0; },
+        label: "Beri izin tulis", hint: "Dialog izin milik Health Connect akan muncul. Izin yang tidak diberikan dilewati.",
+        m: "requestHealthConnectPermissions", into: "hc", timeout: 180000,
+        done: function (s) { return s.hc.missing.length ? "Sebagian izin belum diberikan." : "Semua izin diberikan."; } },
+      { t: "button", need: ["hc"], plain: true, vis: function (s) { return s.hc.availability === "available" && s.hc.missing.length > 0; },
+        label: "Buka pengaturan Health Connect", hint: "Pakai bila dialog izin tidak muncul (Android berhenti menampilkannya setelah dua kali ditolak).",
+        m: "openHealthConnectSettings" },
+      { t: "switch", need: ["hc"], vis: function (s) { return s.hc.availability === "available"; },
+        label: "Salin data jam ke Health Connect",
+        hint: "Menyalakan langsung menyalin semua data yang sudah ada (bisa beberapa menit; jangan tutup layar ini). Setelah itu tiap sinkron menyalin data barunya. Mematikan hanya menghentikan salinan berikutnya; data yang sudah ditulis dihapus lewat aplikasi Health Connect.",
+        val: function (s) { return s.hc.enabled; }, m: "setHealthConnectEnabled", into: "hc", timeout: 900000,
+        done: function (s) { return s.hc.enabled ? "Salinan ke Health Connect menyala." : "Salinan ke Health Connect dimatikan."; } },
+      { t: "button", need: ["hc"], vis: function (s) { return s.hc.availability === "available" && s.hc.enabled; },
+        label: "Salin ulang semua data", hint: "Menulis ulang semua data jam yang tersimpan. Data yang sama tidak digandakan oleh Health Connect.",
+        m: "backfillHealthConnect", reload: true, timeout: 900000,
+        done: function (s, r) {
+          return r ? "Ditulis: " + r.steps + " langkah, " + r.distance + " jarak, " + r.calories + " kalori, " + r.heartRate + " detak, " + r.spo2 + " SpO2, " + r.restingHeartRate + " detak istirahat, " + r.sleep + " tidur, " + r.workouts + " latihan." : "Selesai.";
+        } },
+      { t: "note", need: ["hc"], vis: function (s) { return !!s.hc.lastExportSec; },
+        text: function (s) { return "Salinan terakhir: " + new Date(s.hc.lastExportSec * 1000).toLocaleString("id-ID") + (s.hc.lastCounts ? " (" + s.hc.lastCounts + ")" : "") + "."; } },
+      { t: "note", need: ["hc"], warn: true, vis: function (s) { return !!s.hc.lastError; },
+        text: function (s) { return "Galat terakhir: " + s.hc.lastError; } },
+      { t: "note", warn: true, text: "Belum diuji di HP asli. Cek hasilnya di aplikasi Health Connect (Data dan akses > Aktivitas / Tidur)." }
+    ]
+  },
+  {
+    id: "impor-huawei", title: "Impor dari Huawei Health",
+    sub: "Masukkan riwayat lama dari akun Huawei (ekspor Pusat Privasi Huawei) ke data jam di HP ini. Dibaca di HP; tidak memanggil server Huawei.",
+    load: { hx: "getHuaweiExport" },
+    items: [
+      { t: "note", text: "Cara mengambil berkasnya (menurut dokumentasi JoyoFit; nama menu Huawei bisa berubah): buka privacy.consumer.huawei.com, pilih Request Your Data (salinan data), centang Health, buat kata sandi ZIP, lalu tunggu email (sampai 7 hari; tautannya berlaku 21 hari). Berkasnya bernama HUAWEI_HEALTH_<waktu>.zip. Sinkronkan jam di Huawei Health sekali lagi sebelum melepas ikatan jam: data yang hanya ada di jam hilang saat dilepas." },
+      { t: "hwimport", need: ["hx"], src: "hx", label: "Berkas ekspor",
+        hint: "Pilih ZIP-nya, isi kata sandi, lalu Impor. ZIP dibuka di tempatnya (tidak disalin) dan dibaca bertahap; kata sandi hanya di memori. Layar tetap menyala selama impor." }
+    ]
+  },
+  {
+    id: "musik", title: "Musik di jam (uji lab)",
+    sub: "Kirim lagu dari HP ke penyimpanan jam lewat Bluetooth. Tidak ada yang diunggah ke server.",
+    load: { mu: "getWatchMusic" },
+    items: [
+      { t: "note", warn: true, text: "Uji lab. Menurut dokumentasi JoyoFit, baru terbukti di Watch Fit 4 Pro (MP3 32 MB terkirim dan terputar). Watch Fit 2 belum diuji: jam harus mengumumkan dukungan penyimpanan lagu (25/04) saat tersambung. Lagu dikirim apa adanya, tanpa konversi: MP3, AAC, M4A, FLAC, WAV, atau Opus yang dikenal jam (Huawei menyarankan MP3/AAC di bawah 320 kbps), paling besar 64 MB." },
+      { t: "switch", need: ["mu"], label: "Musik di jam (uji lab)", hint: "Mati secara bawaan. Selama mati semua perintah musik ditolak.",
+        val: function (s) { return s.mu.enabled; }, m: "setWatchMusicLab", into: "mu" },
+      { t: "note", need: ["mu"], vis: function (s) { return !!s.mu.enabled; },
+        text: function (s) {
+          if (!s.mu.connected) return "Jam belum tersambung. Sambungkan lewat Koneksi jam.";
+          if (!s.mu.uploadSupported) return "Jam ini tidak mengumumkan penyimpanan lagu (25/04), jadi belum bisa menerima lagu.";
+          return "Jam mendukung penyimpanan lagu" + (s.mu.extendedInfo ? ", dengan batas per format" : "") + (s.mu.moreMusic ? ", daftar lagu panjang." : ".");
+        } },
+      { t: "music", need: ["mu"], vis: function (s) { return !!s.mu.enabled; }, src: "mu", label: "Lagu di jam" }
+    ]
   }
 ];
 
@@ -1297,6 +1367,126 @@ function confirmBtn(label, sure, on) {
   });
   return b;
 }
+/* ---------- Langkah 8 dan 9: impor ekspor Huawei dan musik di jam ---------- */
+var HW = { running: false, prog: null, res: null };
+window.__hwTick = function (p) {
+  HW.prog = p;
+  var e = document.getElementById("hwp");
+  if (e) e.textContent = hwProgress(p);
+};
+function hwProgress(p) {
+  if (!p) return "";
+  if (p.phase === "done") return "Selesai membaca " + p.fileCount + " berkas.";
+  return "Membaca " + (p.fileName || "\u2026") + " (" + p.fileIndex + " dari " + p.fileCount + "), " + Math.round((p.fraction || 0) * 100) + "%. Jangan tutup layar ini.";
+}
+function hwLines(r) {
+  var day = function (sec) { return new Date(sec * 1000).toLocaleDateString("id-ID"); };
+  var L = [];
+  L.push("Berkas dibaca: " + r.filesRead + (r.filesFailed ? ", gagal " + r.filesFailed : "") + (r.filesIgnored ? ", dilewati " + r.filesIgnored : "") + ".");
+  if (r.oldestSec && r.newestSec) L.push("Rentang data: " + day(r.oldestSec) + " sampai " + day(r.newestSec) + ".");
+  L.push("Menit langkah/kalori/jarak ditulis: " + r.minutesWritten + ". Detak jantung " + r.heartRateReadings + ", detak istirahat " + r.restingHeartRateReadings + ", SpO2 " + r.spo2Readings + ", stres " + r.stressAdded + " baru.");
+  L.push("Tidur: " + r.sleepSegmentsAdded + " segmen baru dari " + r.sleepSegmentsFound + ". Total harian baru: " + r.dayTotalsAdded + ".");
+  L.push("Latihan: " + r.workoutsFound + " ditemukan, " + r.workoutsAdded + " baru, " + r.workoutsUpdated + " diperbarui, " + r.workoutPointsAdded + " titik rute.");
+  if (r.badRecords || r.rejectedSamples) L.push("Dilewati karena tidak terbaca atau tidak masuk akal: " + r.badRecords + " catatan, " + r.rejectedSamples + " sampel.");
+  if (r.cancelled) L.push("Dibatalkan di tengah jalan. Yang sudah ditulis tetap ada.");
+  return L;
+}
+
+KIND.hwimport = function (g, it) {
+  var st = S[it.src], row = el("div", "row col");
+  row.appendChild(labelBox(it));
+  var info = el("small", "", ""); info.style.color = "var(--mt)";
+  var pw = el("input"); pw.type = "password"; pw.placeholder = "Kata sandi ZIP"; pw.autocomplete = "off"; pw.setAttribute("aria-label", "Kata sandi ZIP");
+  var prog = el("small", "", ""); prog.id = "hwp"; prog.style.color = "var(--mt)"; prog.style.display = "block";
+  var res = el("div", "stp");
+  var bar = el("div", "btns");
+  var pick = btn("Pilih berkas ZIP", "g", function () {
+    rn("pickHuaweiExport", [], 300000).then(function (x) { st.name = x.name; HW.res = null; paint(); })
+      .catch(function (e) { toast(e.message, true); });
+  });
+  var go = btn("Impor", "", function () {
+    if (!pw.value) { toast("Isi kata sandi ZIP.", true); pw.focus(); return; }
+    var pass = pw.value; pw.value = "";
+    HW.running = true; HW.res = null; HW.prog = null; paint();
+    rn("importHuaweiExport", [pass], 21600000).then(function (r) {
+      HW.res = r; toast(r && r.cancelled ? "Impor dibatalkan." : "Impor selesai. Data dikirim ke halaman utama saat dibuka.");
+    }).catch(function (e) { toast(e.message, true); }).then(function () { HW.running = false; if (row.isConnected) paint(); });
+  });
+  var cn = btn("Batal", "g", function () { rn("cancelHuaweiImport").catch(function (e) { toast(e.message, true); }); });
+  function paint() {
+    var running = HW.running || !!st.running;
+    info.textContent = st.name ? "Berkas: " + st.name : "Belum ada berkas dipilih.";
+    prog.textContent = running ? (hwProgress(HW.prog) || "Menyiapkan\u2026") : "";
+    pw.style.display = st.name && !running ? "" : "none";
+    go.style.display = st.name && !running ? "" : "none";
+    pick.disabled = running; pick.style.display = running ? "none" : "";
+    cn.style.display = running ? "" : "none";
+    res.textContent = "";
+    res.style.display = HW.res ? "" : "none";
+    if (HW.res) hwLines(HW.res).forEach(function (t) { res.appendChild(el("small", "", t)).style.display = "block"; });
+  }
+  [info, pw, prog, res].forEach(function (x) { row.appendChild(x); });
+  bar.appendChild(pick); bar.appendChild(go); bar.appendChild(cn); row.appendChild(bar);
+  paint();
+  return row;
+};
+
+var MUS = { list: null, last: "", working: false };
+KIND.music = function (g, it) {
+  var row = el("div", "row col"), info = el("small", "", ""), box = el("div"), prog = el("small", "", ""), out = el("small", "", "");
+  [info, prog, out].forEach(function (x) { x.style.color = "var(--mt)"; x.style.display = "block"; });
+  prog.id = "upl";
+  var bar = el("div", "btns");
+  var refresh = btn("Baca daftar dari jam", "g", function () { load(); });
+  var add = btn("Tambah lagu", "", function () {
+    MUS.working = true; MUS.last = ""; prog.textContent = "Memilih berkas\u2026"; paint();
+    rn("uploadWatchSong", [], 900000).then(function (r) {
+      MUS.last = r.status === "cancelled" ? "Pengiriman dibatalkan."
+        : "Terkirim: " + r.title + " \u2014 " + r.artist + " (" + r.format + ", " + Math.max(1, Math.round(r.bytes / 1024)) + " KB, " + Math.round(r.uploadMs / 1000) + " detik).";
+      toast(MUS.last);
+      return r.status === "uploaded" ? rn("listWatchMusic", [], 90000).then(function (l) { MUS.list = l; }).catch(function () {}) : null;
+    }).catch(function (e) { MUS.last = ""; toast(e.message, true); })
+      .then(function () { MUS.working = false; prog.textContent = ""; if (row.isConnected) paint(); });
+  });
+  var cn = btn("Batal", "g", function () { rn("cancelWatchMusicUpload").catch(function (e) { toast(e.message, true); }); });
+  function load() {
+    MUS.working = true; paint();
+    rn("listWatchMusic", [], 90000).then(function (l) { MUS.list = l; })
+      .catch(function (e) { toast(e.message, true); })
+      .then(function () { MUS.working = false; if (row.isConnected) paint(); });
+  }
+  function paint() {
+    var l = MUS.list, i = l && l.info;
+    info.textContent = !l ? "Daftar lagu belum dibaca. Ketuk Baca daftar dari jam (jam harus tersambung)."
+      : (i.freeSpaceMb != null ? "Ruang kosong " + i.freeSpaceMb + " MB. " : "") + l.songs.length + (i.maxSongs ? " dari " + i.maxSongs : "") + " lagu. Format yang diterima jam: " + (i.formats.length ? i.formats.join(", ") : "tidak dilaporkan") + ".";
+    out.textContent = MUS.last;
+    refresh.disabled = MUS.working; add.disabled = MUS.working;
+    cn.style.display = MUS.working ? "" : "none";
+    box.textContent = "";
+    if (l) l.songs.forEach(function (x) {
+      var c = el("div", "stp");
+      c.appendChild(el("b", "", x.title || x.fileName));
+      c.appendChild(el("small", "", (x.artist || "") + " | " + x.fileName + " | id " + x.id)).style.color = "var(--mt)";
+      var b = el("div", "btns");
+      b.appendChild(confirmBtn("Hapus", "Ketuk lagi untuk menghapus", function () {
+        MUS.working = true; paint();
+        rn("deleteWatchSongs", [[x.id]], 90000).then(function (r) {
+          toast(r && r.ok ? "Lagu dihapus dari jam." : "Jam tidak mengonfirmasi (kode " + (r ? r.code : "?") + ").", !(r && r.ok));
+          return rn("listWatchMusic", [], 90000).then(function (n) { MUS.list = n; });
+        }).catch(function (e) { toast(e.message, true); })
+          .then(function () { MUS.working = false; if (row.isConnected) paint(); });
+      }));
+      c.appendChild(b); box.appendChild(c);
+    });
+  }
+  row.appendChild(labelBox(it)); row.appendChild(info); row.appendChild(box); row.appendChild(prog); row.appendChild(out);
+  bar.appendChild(add); bar.appendChild(refresh); bar.appendChild(cn); row.appendChild(bar);
+  var hint = el("small", "", "Tambah lagu membuka pemilih berkas audio, lalu langsung mengirimnya ke jam (satu lagu sekali kirim). Layar tetap menyala selama pengiriman.");
+  hint.style.color = "var(--mt)"; row.appendChild(hint);
+  paint();
+  return row;
+};
+
 window.__upTick = function (done, total) {
   var e = document.getElementById("upl");
   if (e) e.textContent = "Mengirim ke jam: " + Math.round(done * 100 / Math.max(1, total)) + "%. Jangan tutup layar ini.";
