@@ -353,16 +353,16 @@ function Home({
             <button
               type="button"
               onClick={() => void pushMenu(plan, false, onDeliver, delivered)}
-              className="flex h-12 flex-1 items-center justify-center rounded-full bg-lime font-bold text-ink"
+              className="flex min-h-12 flex-1 items-center justify-center whitespace-nowrap rounded-full bg-lime px-4 font-bold text-ink"
             >
-              Kirim jadwal hari ini
+              Kirim ke jam
             </button>
           ) : null}
           {plan.status === "train" && (
             <button
               type="button"
               onClick={() => useRun.getState().skipToday(localDay())}
-              className="flex h-12 flex-1 items-center justify-center rounded-full border border-line font-semibold"
+              className="flex min-h-12 flex-none items-center justify-center rounded-full border border-line px-6 font-semibold"
             >
               Lewati
             </button>
@@ -549,7 +549,7 @@ function WatchActions({ delivering, setDelivering }: { delivering: boolean; setD
         onClick={() => void pushMenu(plan, false, () => setDelivering(true), () => setDelivering(false))}
         className="flex h-12 w-full items-center justify-center rounded-full bg-lime font-bold text-ink disabled:opacity-40"
       >
-        {delivering ? "Mengirim ke jam…" : canSend ? "Kirim jadwal hari ini" : "Tidak ada jadwal untuk dikirim"}
+        {delivering ? "Mengirim ke jam…" : canSend ? "Kirim ke jam" : "Tidak ada jadwal untuk dikirim"}
       </button>
       {inApp ? (
         <button type="button" onClick={() => void openNative("/settings/koneksi")} className={outline}>
