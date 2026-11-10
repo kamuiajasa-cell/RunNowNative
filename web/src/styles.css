@@ -109,6 +109,31 @@
   background: #3a403c;
 }
 
+/* Kartu jam versi tema terang */
+:root[data-theme="light"] .wf-bezel {
+  background: linear-gradient(160deg, #ffffff, #cfd8cf 45%, #eef2ec);
+  box-shadow:
+    0 18px 40px rgb(20 32 22 / 0.18),
+    inset 0 1px 0 rgb(255 255 255 / 0.9);
+}
+
+:root[data-theme="light"] .wf-screen {
+  background: #f7faf5;
+  color: #142016;
+  --color-oled-fg: #142016;
+  --color-oled-muted: #5c6b5e;
+  --color-oled-soft: #3a4a3c;
+  --color-oled-chip: #e3ebe1;
+}
+
+:root[data-theme="light"] .wf-screen::before {
+  background: radial-gradient(ellipse, rgb(0 158 69 / 0.08), transparent 70%);
+}
+
+:root[data-theme="light"] .wf-side {
+  background: #b8c2b9;
+}
+
 @keyframes rise {
   from {
     opacity: 0;
