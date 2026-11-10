@@ -1,0 +1,7 @@
+.gradle/
+build/
+*/build/
+local.properties
+.idea/
+web/node_modules/
+web/dist/

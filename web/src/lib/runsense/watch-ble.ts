@@ -40,7 +40,7 @@ function ble(): BleNavigator | null {
 export async function pickHuaweiWatch(): Promise<WatchLink> {
   const api = ble();
   if (!api) {
-    throw new Error("Bluetooth tidak ada di browser ini. Menu tetap tampil di jam layar.");
+    throw new Error("Bluetooth tidak ada di browser ini. Buka lewat aplikasi RunSense untuk menyambungkan jam.");
   }
   let device: BleDevice;
   try {

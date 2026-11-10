@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Bluetooth,
+  BadgeCheck,
+  Globe,
   House,
   History,
   Moon,
@@ -16,7 +18,7 @@ import { useRun, syncNow, localDay, bytesToB64, b64ToBytes, type WatchMenu } fro
 import { derive, greeting, f1, band, durText, metsAt, planSeconds, STAGE_TIPS } from "@/lib/runsense/engine";
 import { encodeCourse, downloadCourse } from "@/lib/runsense/course";
 import { bleSupported, pickHuaweiWatch } from "@/lib/runsense/watch-ble";
-import { deliverSchedule } from "@/lib/runsense/watch-push";
+import { deliverSchedule, openScreen, watchBridgeReady, type NativeScreen } from "@/lib/runsense/watch-push";
 import type { Goal, HistoryItem, Plan, Style } from "@/lib/runsense/model";
 import { GOALS } from "@/lib/runsense/model";
 import { useSession } from "@/lib/runsense/session";
@@ -56,6 +58,25 @@ function useDerived() {
   );
 }
 
+function Logo({ className = "size-8" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 108 108" className={className} role="img" aria-label="RunSense">
+      <rect width="108" height="108" rx="24" fill="#090c0a" />
+      <path d="M74.68,36.64 A27,27 0 1 1 33.32,36.64" fill="none" stroke="#00d15c" strokeWidth="7" strokeLinecap="round" />
+      <path d="M40,55 L47,55 L51,44 L57,67 L61,51 L68,51" fill="none" stroke="#00d15c" strokeWidth="5.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function Wordmark({ size = "text-2xl" }: { size?: string }) {
+  return (
+    <span className="flex items-center gap-2.5">
+      <Logo />
+      <span className={`${size} font-extrabold tracking-tight text-lime`}>RunSense</span>
+    </span>
+  );
+}
+
 export function RunSenseApp() {
   const ready = useRun((s) => s.ready);
   const theme = useRun((s) => s.theme);
@@ -81,7 +102,7 @@ export function RunSenseApp() {
   if (!ready) {
     return (
       <main className="grid min-h-dvh place-items-center">
-        <p className="text-2xl font-extrabold tracking-tight text-lime">RunSense</p>
+        <Wordmark />
       </main>
     );
   }
@@ -119,7 +140,7 @@ function Setup() {
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-6 py-8">
-      <p className="text-3xl font-extrabold tracking-tight text-lime">RunSense</p>
+      <Wordmark size="text-3xl" />
       <p className="mt-1 text-base text-muted">Coach lari · menu langsung ke Watch Fit 2</p>
       <button
         type="button"
@@ -221,7 +242,7 @@ function Coach() {
         <WatchFace menu={menu} deviceName={link?.name ?? null} delivering={delivering} />
         <p className="mt-3 text-sm leading-relaxed text-muted">
           {link?.name ? `Terikat ke ${link.name}. ` : ""}
-          Jadwal yang dikirim muncul di layar ini. Di aplikasi Run Now, file yang sama masuk ke latihan Watch Fit 2.
+          Jadwal yang dikirim muncul di layar ini. Di aplikasi RunSense, file yang sama masuk ke latihan Watch Fit 2.
         </p>
       </aside>
       {settings && <SettingsSheet onClose={() => setSettings(false)} />}
@@ -276,7 +297,7 @@ function Home({
   return (
     <div className="rise">
       <header className="flex items-center justify-between">
-        <p className="text-2xl font-extrabold tracking-tight text-lime">RunSense</p>
+        <Wordmark />
         <div className="flex gap-2">
           <IconBtn label="Ganti tema" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
             {theme === "dark" ? <Moon className="size-4" /> : <Sun className="size-4" />}
@@ -448,6 +469,7 @@ function WatchScreen({
           <p className="text-2xl font-extrabold tracking-tight">Jam</p>
           <p className="text-sm text-muted">{link ? link.name : "Watch Fit 2 belum dipindai"}</p>
         </div>
+        <ModeBadge />
       </header>
       <div className="lg:hidden">
         <WatchFace menu={menu} deviceName={link?.name ?? null} delivering={delivering} />
@@ -487,11 +509,38 @@ function WatchScreen({
   );
 }
 
+function ModeBadge() {
+  const inApp = watchBridgeReady();
+  return inApp ? (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-lime-dim px-3 py-1 text-xs font-bold text-lime">
+      <BadgeCheck className="size-3.5" />
+      Aplikasi
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-dim px-3 py-1 text-xs font-bold text-amber">
+      <Globe className="size-3.5" />
+      Browser
+    </span>
+  );
+}
+
+async function openNative(route: NativeScreen) {
+  const store = useRun.getState();
+  try {
+    await openScreen(route);
+  } catch (err) {
+    store.setError(err instanceof Error ? err.message : "Layar tidak terbuka.");
+  }
+}
+
 function WatchActions({ delivering, setDelivering }: { delivering: boolean; setDelivering: (v: boolean) => void }) {
   const view = useDerived();
   const link = useRun((s) => s.link);
   const plan = view.plan;
   const canSend = plan.blocks.length > 0 && (plan.status === "train" || plan.status === "rest");
+  const inApp = watchBridgeReady();
+  const outline =
+    "flex h-12 w-full items-center justify-center gap-2 rounded-full border border-line font-semibold disabled:opacity-40";
   return (
     <div className="mt-4 space-y-2">
       <button
@@ -502,20 +551,42 @@ function WatchActions({ delivering, setDelivering }: { delivering: boolean; setD
       >
         {delivering ? "Mengirim ke jam…" : canSend ? "Kirim jadwal hari ini" : "Tidak ada jadwal untuk dikirim"}
       </button>
+      {inApp ? (
+        <button type="button" onClick={() => void openNative("/settings/koneksi")} className={outline}>
+          <Bluetooth className="size-4" />
+          Hubungkan jam (pindai &amp; ikat)
+        </button>
+      ) : bleSupported() ? (
+        <button
+          type="button"
+          onClick={() => void pushMenu(plan, true, () => setDelivering(true), () => setDelivering(false))}
+          disabled={!canSend}
+          className={outline}
+        >
+          <Bluetooth className="size-4" />
+          Pindai Watch Fit 2, lalu kirim
+        </button>
+      ) : (
+        <button type="button" disabled className={outline}>
+          <Bluetooth className="size-4" />
+          Bluetooth hanya lewat aplikasi RunSense
+        </button>
+      )}
       <button
         type="button"
-        onClick={() => void pushMenu(plan, true, () => setDelivering(true), () => setDelivering(false))}
-        disabled={!canSend}
-        className="flex h-12 w-full items-center justify-center gap-2 rounded-full border border-line font-semibold disabled:opacity-40"
+        onClick={() => (inApp ? void openNative("/settings") : window.location.assign("pengaturan.html"))}
+        className={outline}
       >
-        <Bluetooth className="size-4" />
-        {bleSupported() ? "Pindai Watch Fit 2, lalu kirim" : "Bluetooth tidak tersedia di browser ini"}
+        <Settings className="size-4" />
+        Pengaturan jam
       </button>
       <p className="text-sm leading-relaxed text-muted">
         {link
           ? `${link.name}${link.gatt ? " menjawab layanan Huawei" : " terlihat"}. `
-          : "Tombol hijau menyiapkan jadwal hari ini. "}
-        Di aplikasi Run Now, jadwal masuk sebagai program lari di Watch Fit 2. Di browser, jadwal tampil di jam layar karena saluran jam terenkripsi.
+          : inApp
+            ? "Belum tersambung? Pakai Hubungkan jam, lalu kembali ke sini dan kirim jadwal. "
+            : "Tombol hijau menyiapkan jadwal hari ini. "}
+        Di aplikasi RunSense, jadwal masuk sebagai program lari di Watch Fit 2. Di browser, jadwal tampil di jam layar karena saluran jam terenkripsi.
       </p>
     </div>
   );

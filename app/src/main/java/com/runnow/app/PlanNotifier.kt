@@ -78,7 +78,8 @@ object PlanNotifier {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val n = android.app.Notification.Builder(ctx, CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_popup_reminder)
+            .setSmallIcon(R.drawable.ic_stat_runsense)
+            .setColor(0xFF00D15C.toInt())
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(android.app.Notification.BigTextStyle().bigText(big.ifBlank { body }))

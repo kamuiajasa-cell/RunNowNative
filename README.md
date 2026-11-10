@@ -1,6 +1,6 @@
-# Run Now Native
+# RunSense (Run Now Native)
 
-Aplikasi Android **Run Now** yang menggabungkan antarmuka Run Now dengan integrasi perangkat wearable Huawei/Honor. Proyek ini menggunakan Android native (Kotlin) sebagai host aplikasi, sementara halaman Run Now dan pengaturannya dirender di WebView lokal.
+Aplikasi Android **RunSense** yang menggabungkan antarmuka Run Now dengan integrasi perangkat wearable Huawei/Honor. Proyek ini menggunakan Android native (Kotlin) sebagai host aplikasi, sementara halaman Run Now dan pengaturannya dirender di WebView lokal.
 
 > **Status proyek:** dalam pengembangan. Keberhasilan kompilasi bukan bukti bahwa seluruh fitur Bluetooth, sinkronisasi, dan notifikasi sudah teruji pada perangkat fisik.
 
@@ -22,7 +22,7 @@ WebView memuat aset lokal melalui **AndroidX WebKit WebViewAssetLoader** pada or
 
 ## Fitur dan integrasi
 
-### Aplikasi Run Now
+### Aplikasi RunSense
 - Halaman utama berada di `app/src/main/assets/index.html`.
 - Halaman pengaturan berada di `app/src/main/assets/pengaturan.html`.
 - Navigasi layar native ditangani melalui `Routes.kt`.

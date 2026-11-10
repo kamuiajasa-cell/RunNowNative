@@ -2,7 +2,7 @@ import type { Plan, PlanStep } from "./model";
 
 /**
  * Today's schedule as Huawei Health's running course.
- * Same shape Run Now accepts on `pushRunningCourse` (RunNowBridge COURSE rule /
+ * Same shape RunSense accepts on `pushRunningCourse` (RunNowBridge COURSE rule /
  * CourseProtobuf): time targets, pace in seconds per km, heart rate as % max.
  */
 export type CourseStepWire = {
@@ -45,7 +45,7 @@ export function watchBridgeReady() {
 
 let seq = 0;
 
-function rpc<T>(method: string, args: unknown[], ms: number): Promise<T> {
+function rpc<T>(method: string, args: unknown[], ms: number, timeoutMsg = "Watch Fit 2 tidak menjawab. Pastikan jam tersambung di RunSense."): Promise<T> {
   const link = bridge();
   if (!link) return Promise.reject(new Error("Jembatan jam tidak ada."));
   const w = window as Window & {
@@ -57,7 +57,7 @@ function rpc<T>(method: string, args: unknown[], ms: number): Promise<T> {
     w.__rsPending = w.__rsPending || {};
     const timer = window.setTimeout(() => {
       delete w.__rsPending?.[id];
-      reject(new Error("Watch Fit 2 tidak menjawab. Pastikan jam tersambung di Run Now."));
+      reject(new Error(timeoutMsg));
     }, ms);
     w.__rsPending[id] = {
       timer,
@@ -116,9 +116,9 @@ export function planToCourse(plan: Plan): CourseWire {
 
 /**
  * Send today's plan to a paired Huawei Watch Fit 2.
- * Inside the Run Now app this is the real P2P course (`in.huawei.fitness`).
+ * Inside the RunSense app this is the real P2P course (`in.huawei.fitness`).
  * A normal browser cannot open that encrypted channel, so the schedule stays
- * on the on-screen watch until the page runs in Run Now.
+ * on the on-screen watch until the page runs in RunSense.
  */
 export async function deliverSchedule(plan: Plan): Promise<Delivery> {
   const course = planToCourse(plan);
@@ -129,7 +129,7 @@ export async function deliverSchedule(plan: Plan): Promise<Delivery> {
     return {
       via: "screen",
       ok: true,
-      note: "Jadwal hari ini tampil di jam layar. Dari aplikasi Run Now (jam sudah tersambung), tombol yang sama mengirim program ini ke Watch Fit 2.",
+      note: "Jadwal hari ini tampil di jam layar. Dari aplikasi RunSense (jam sudah tersambung), tombol yang sama mengirim program ini ke Watch Fit 2.",
     };
   }
   try {
@@ -148,4 +148,14 @@ export async function deliverSchedule(plan: Plan): Promise<Delivery> {
     const message = err instanceof Error ? err.message : "Jam menolak jadwal.";
     return { via: "screen", ok: false, note: message };
   }
+}
+
+export type NativeScreen = "/settings/koneksi" | "/settings";
+
+/**
+ * Opens a native RunSense screen: "/settings/koneksi" is the watch scan/pair/connect
+ * screen, "/settings" is pengaturan.html (all watch settings). Only works inside the app.
+ */
+export async function openScreen(route: NativeScreen): Promise<void> {
+  await rpc<null>("openScreen", [route], 10_000, "Layar tidak terbuka. Coba lagi.");
 }
