@@ -43,9 +43,10 @@ export function f1(n: number | null | undefined) {
 
 export function paceLabel(minPerKm: number) {
   if (!(minPerKm > 0)) return "—";
-  const m = Math.floor(minPerKm);
-  const s = Math.round((minPerKm - m) * 60);
-  return `${m}:${String(s % 60).padStart(2, "0")}`;
+  const total = Math.round(minPerKm * 60);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 export function clock(sec: number) {
@@ -103,7 +104,8 @@ export function paceOf(mets: number) {
   let hi = 16;
   for (let i = 0; i < 36; i++) {
     const mid = (lo + hi) / 2;
-    if (metsAt(mid) < mets) lo = mid;
+    // metsAt turun saat pace makin lambat: kalau METs di mid masih di atas target, mid terlalu cepat
+    if (metsAt(mid) > mets) lo = mid;
     else hi = mid;
   }
   return (lo + hi) / 2;
