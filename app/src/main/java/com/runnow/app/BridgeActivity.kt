@@ -154,8 +154,12 @@ abstract class BridgeActivity : ComponentActivity() {
             settings.allowFileAccess = false
             settings.allowContentAccess = false
             webViewClient = object : WebViewClient() {
-                override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
-                    loader.shouldInterceptRequest(request.url)
+                override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                    val u = request.url
+                    // RunSense memanggil /api/icu/...; di aplikasi, permintaan itu diteruskan ke Intervals.icu dari sini.
+                    if (u.host == ORIGIN_HOST && u.path?.startsWith("/api/icu/") == true) return proxyIcu(request)
+                    return loader.shouldInterceptRequest(u)
+                }
 
                 override fun onPageFinished(view: WebView, url: String?) {
                     onPageLoaded()
@@ -211,5 +215,38 @@ abstract class BridgeActivity : ComponentActivity() {
             if (c.moveToFirst()) c.getString(0) else null
         }
         return fromProvider ?: uri.lastPathSegment ?: "berkas"
+    }
+}
+
+
+/** Proxy GET ke https://intervals.icu/api/v1/..., meniru route server /api/icu/$ milik versi web. */
+private fun proxyIcu(request: WebResourceRequest): WebResourceResponse {
+    fun fail(code: Int, reason: String, msg: String) = WebResourceResponse(
+        "text/plain", "utf-8", code, reason, mapOf("Cache-Control" to "no-store"),
+        java.io.ByteArrayInputStream(msg.toByteArray()),
+    )
+    val rest = request.url.path.orEmpty().removePrefix("/api/icu/")
+    if (request.method != "GET" || rest.isEmpty() || rest.contains("..") || rest.contains("://")) {
+        return fail(400, "Bad Request", "Path tidak valid")
+    }
+    val auth = request.requestHeaders.entries.firstOrNull { it.key.equals("Authorization", ignoreCase = true) }?.value.orEmpty()
+    if (!auth.startsWith("Basic ") || auth.length < 12 || auth.length > 400) {
+        return fail(401, "Unauthorized", "API key wajib")
+    }
+    return try {
+        val query = request.url.encodedQuery?.let { "?$it" }.orEmpty()
+        val conn = java.net.URL("https://intervals.icu/api/v1/$rest$query").openConnection() as java.net.HttpURLConnection
+        conn.connectTimeout = 15_000
+        conn.readTimeout = 30_000
+        conn.setRequestProperty("Authorization", auth)
+        conn.setRequestProperty("Accept", "application/json")
+        val code = conn.responseCode
+        val stream = if (code in 200..399) conn.inputStream else conn.errorStream
+        val body = stream?.use { it.readBytes() } ?: ByteArray(0)
+        val mime = conn.contentType?.substringBefore(';')?.trim()?.takeIf { it.isNotEmpty() } ?: "application/json"
+        val reason = conn.responseMessage?.takeIf { it.isNotEmpty() } ?: "OK"
+        WebResourceResponse(mime, "utf-8", code, reason, mapOf("Cache-Control" to "no-store"), java.io.ByteArrayInputStream(body))
+    } catch (_: Exception) {
+        fail(502, "Bad Gateway", "Gagal menghubungi Intervals.icu")
     }
 }
