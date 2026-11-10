@@ -76,6 +76,13 @@ export function todayStart() {
   return dayStart(Date.now());
 }
 
+// Awal minggu kalender (Senin 00.00, waktu lokal)
+export function weekStart() {
+  const d = new Date(todayStart());
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return d.getTime();
+}
+
 const DAY = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
 
 export function metsAt(pace: number) {
@@ -333,11 +340,13 @@ export function designToday(opts: {
     else if (latest.tsb != null) tsb = latest.tsb;
   }
 
+  // Sesi berat = Tempo/VO2 (label sama dengan Riwayat), dihitung sejak Senin
   let qualityCount = 0;
-  const now = Date.now();
+  const wk = weekStart();
   opts.acts.forEach((a) => {
-    if (now - a.t > 7 * 864e5) return;
-    if (a.kind === "run" && loadOf(a) > 75) qualityCount++;
+    if (a.t < wk) return;
+    const ty = detectType(a, opts.acts, st.m).type;
+    if (ty === "Tempo" || ty === "VO2") qualityCount++;
   });
 
   if (score < 42 || (tsb != null && tsb < -25)) {
