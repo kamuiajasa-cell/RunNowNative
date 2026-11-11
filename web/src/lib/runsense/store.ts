@@ -1,7 +1,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Act, Goal, Style, Wellness } from "./model";
-import { derive, rowFromIcu } from "./engine";
+import type { Act, ActDetail, Goal, Style, Wellness } from "./model";
+import { derive, rowFromIcu, flattenBlocks } from "./engine";
+import { analyzeActivity, parseStreams } from "./streams";
 import type { WatchLink } from "./watch-ble";
 
 export type WatchMenu = {
@@ -34,6 +35,7 @@ type State = {
   stage: number;
   acts: Act[];
   wellness: Wellness[];
+  details: Record<string, ActDetail>;
   icuLast: number;
   syncNote: string;
   busy: boolean;
@@ -53,7 +55,7 @@ type State = {
   setMenu: (m: WatchMenu | null) => void;
   skipToday: (day: string) => void;
   connectKey: (key: string) => void;
-  applySync: (patch: Partial<Pick<State, "name" | "rest" | "max" | "age" | "stage" | "acts" | "wellness" | "icuLast" | "syncNote">>) => void;
+  applySync: (patch: Partial<Pick<State, "name" | "rest" | "max" | "age" | "stage" | "acts" | "wellness" | "details" | "icuLast" | "syncNote">>) => void;
   setBusy: (v: boolean) => void;
   enterDemo: () => void;
   logout: () => void;
@@ -68,6 +70,7 @@ const empty = {
   stage: 0,
   acts: [] as Act[],
   wellness: [] as Wellness[],
+  details: {} as Record<string, ActDetail>,
   icuLast: 0,
   syncNote: "",
   skippedDay: "",
@@ -152,6 +155,7 @@ export const useRun = create<State>()(
               stage: s.stage,
               acts: s.acts,
               wellness: s.wellness,
+              details: s.details,
               icuLast: s.icuLast,
               syncNote: s.syncNote,
               skippedDay: s.skippedDay,
@@ -185,6 +189,7 @@ export function viewOf() {
     age: s.age,
     prevStage: s.stage,
     skipped,
+    details: s.details,
   });
 }
 
@@ -276,6 +281,7 @@ export async function syncNow(silent = false) {
       age: cur.age,
       prevStage: cur.stage,
       skipped: cur.skippedDay === localDay(),
+      details: cur.details,
     });
     useRun.getState().applySync({
       acts,
@@ -285,6 +291,7 @@ export async function syncNow(silent = false) {
       syncNote: note,
       stage: derived.nextStage,
     });
+    void syncDetails(headers);
     return true;
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Gagal sinkron";
@@ -293,6 +300,64 @@ export async function syncNow(silent = false) {
     return false;
   } finally {
     useRun.getState().setBusy(false);
+  }
+}
+
+let detailBusy = false;
+
+/** Ambil data per detik (waktu, jarak, HR) tiap lari baru, olah jadi ringkasan kecil, simpan di HP. */
+async function syncDetails(headers: Record<string, string>) {
+  if (detailBusy) return;
+  detailBusy = true;
+  try {
+    const s = useRun.getState();
+    const menu = s.menu;
+    const runs = s.acts.filter((a) => a.kind === "run" && a.km >= 1 && a.min >= 5).sort((x, y) => y.t - x.t);
+    // lari pertama setelah menu dikirim ke jam = lari yang dianalisa per segmen
+    const segTarget = menu
+      ? [...runs]
+          .sort((x, y) => x.t - y.t)
+          .find((a) => a.min >= 10 && a.t >= menu.sentAt - 30 * 60e3 && a.t <= menu.sentAt + 20 * 3600e3)
+      : undefined;
+    const need = runs
+      .filter((a) => {
+        const d = s.details[a.id];
+        if (!d) return true;
+        return !!(menu && segTarget && a.id === segTarget.id && !d.none && d.segMenu !== menu.id);
+      })
+      .slice(0, 12);
+    if (!need.length) return;
+    const next = { ...s.details };
+    for (const a of need) {
+      try {
+        const r = await fetch(`/api/icu/activity/${a.id}/streams?types=time,distance,heartrate`, { headers });
+        if (r.status === 401 || r.status === 403) break;
+        if (r.status === 404 || r.status === 422) {
+          next[a.id] = { id: a.id, bests: {}, bins: [], none: true };
+          continue;
+        }
+        if (!r.ok) continue;
+        const st = parseStreams(await r.json());
+        if (!st) {
+          next[a.id] = { id: a.id, bests: {}, bins: [], none: true };
+          continue;
+        }
+        const useMenu = !!(menu && segTarget && a.id === segTarget.id);
+        const d = analyzeActivity(a.id, st, useMenu && menu ? flattenBlocks(menu.blocks) : null);
+        if (useMenu && menu) d.segMenu = menu.id;
+        next[a.id] = d;
+        useRun.getState().applySync({ details: { ...next } });
+      } catch {
+        break; // offline: coba lagi di sinkron berikutnya
+      }
+    }
+    const ids = new Set(useRun.getState().acts.map((a) => a.id));
+    Object.keys(next).forEach((k) => {
+      if (!ids.has(k)) delete next[k];
+    });
+    useRun.getState().applySync({ details: next });
+  } finally {
+    detailBusy = false;
   }
 }
 

@@ -1,8 +1,11 @@
 import type {
   Act,
+  ActDetail,
   Athlete,
+  BestRow,
   Derived,
   Goal,
+  GoalBest,
   GoalEst,
   HistoryItem,
   Plan,
@@ -12,6 +15,7 @@ import type {
   Wellness,
 } from "./model";
 import { STAGE_NAMES } from "./model";
+import { fitLT, mergeSegs, segVerdict } from "./streams";
 
 const PACE_METS: [number, number][] = [
   [4, 14.5],
@@ -536,10 +540,25 @@ function detectType(a: Act, acts: Act[], mets: number | null): { type: string; w
   return { type: "Easy", why: "Usaha merata" };
 }
 
-function reviewToday(acts: Act[], mets: number | null, stage: number) {
+function reviewToday(acts: Act[], mets: number | null, stage: number, details: Record<string, ActDetail>) {
   const notes: { tone: "g" | "y"; text: string }[] = [];
   const today = acts.filter((x) => dayStart(x.t) === todayStart() && x.kind === "run" && x.km > 0);
   for (const a of today) {
+    const segs = details[a.id]?.segs;
+    if (segs) {
+      const merged = mergeSegs(segs);
+      const core = merged.find((g) => g.kind === "run" && g.intensity === "pace");
+      if (core && core.pace != null) {
+        const v = segVerdict(core, merged);
+        notes.push({
+          tone: v?.tone ?? "g",
+          text: `Bagian inti: pace ${paceLabel(core.pace / 60)}/km${core.hr ? `, HR ${core.hr}` : ""}${v ? ` — ${v.text}` : ""}.`,
+        });
+      }
+      const warm = merged.find((g) => g.kind === "warmup");
+      const wv = warm ? segVerdict(warm, merged) : null;
+      if (warm && wv && wv.tone === "y") notes.push({ tone: "y", text: `Pemanasan ${wv.text}.` });
+    }
     if (!mets) continue;
     const pace = a.min / a.km;
     const pct = metsAt(pace) / mets;
@@ -570,7 +589,9 @@ export function derive(opts: {
   age: number;
   prevStage: number;
   skipped: boolean;
+  details?: Record<string, ActDetail>;
 }): Derived & { nextStage: number } {
+  const details = opts.details || {};
   const maxHr = opts.max > 0 ? opts.max : opts.age > 0 ? Math.round(208 - 0.7 * opts.age) : 0;
   const st = stageOf(opts.acts, opts.rest, maxHr, opts.prevStage);
   const plan = designToday({ ...opts, max: maxHr, prevStage: st.s });
@@ -587,22 +608,18 @@ export function derive(opts: {
   }
 
   const runs = opts.acts.filter((a) => a.kind === "run" && a.min >= 15 && a.km >= 1.5);
-  let lthr: number | null = null;
-  const rng = maxHr - opts.rest;
-  if (maxHr >= 140 && rng >= 40) lthr = Math.round(opts.rest + 0.88 * rng);
-  else if (maxHr >= 140) lthr = Math.round(maxHr * 0.88);
-
-  let ltPaceMin: number | null = null;
-  if (st.m && st.m >= 6) ltPaceMin = paceOf(0.85 * st.m);
-  const candidates = runs
-    .filter((a) => a.km >= 2 && a.km <= 12 && a.min >= 12)
-    .map((a) => ({ pace: a.min / a.km, km: a.km }))
-    .sort((a, b) => a.pace - b.pace);
-  if (candidates.length) {
-    const best = candidates[0];
-    const estLT = best.pace * (best.km >= 4 && best.km <= 8 ? 1.03 : 1.06);
-    ltPaceMin = ltPaceMin != null ? Math.max(best.pace * 1.02, Math.min(ltPaceMin, estLT)) : estLT;
-  }
+  // LT dari titik tekuk kurva pace-HR (data per detik, 56 hari terakhir)
+  const cutLT = Date.now() - 56 * 864e5;
+  const ltBins: [number, number, number][] = [];
+  opts.acts.forEach((a) => {
+    const d = details[a.id];
+    if (a.kind === "run" && a.t >= cutLT && d && d.bins.length) ltBins.push(...d.bins);
+  });
+  const lt = fitLT(ltBins);
+  const haveDetail = Object.values(details).some((d) => !d.none);
+  const lthr: number | null = "hr" in lt ? lt.hr : null;
+  const ltPaceMin: number | null = "pace" in lt ? lt.pace / 60 : null;
+  const ltNote: string | null = "reason" in lt ? (haveDetail ? lt.reason : "Menunggu data per detik dari Intervals.icu.") : null;
 
   let est5k: number | null = null;
   for (const a of runs) {
@@ -654,6 +671,29 @@ export function derive(opts: {
         }
       : { current: "—:—", basis: "Data belum cukup", confidence: "—" };
 
+  const actT = new Map(opts.acts.map((a) => [a.id, a.t] as const));
+  const bests: BestRow[] = [1, 3, 5, 10].map((km) => {
+    let sec = 0;
+    let at = 0;
+    Object.values(details).forEach((d) => {
+      const v = d.bests?.[String(km)];
+      const t = actT.get(d.id);
+      if (v && t != null && (!sec || v < sec)) {
+        sec = v;
+        at = t;
+      }
+    });
+    if (!sec) return { km, time: null, pace: null, date: null };
+    return {
+      km,
+      time: clock(sec),
+      pace: `${paceLabel(sec / km / 60)} /km`,
+      date: new Date(at).toLocaleDateString("id-ID", { day: "numeric", month: "short" }),
+    };
+  });
+  const gb = bests.find((b) => b.km === dist);
+  const goalBest: GoalBest | null = gb && gb.time ? { km: gb.km, time: gb.time, pace: gb.pace as string, date: gb.date as string } : null;
+
   const athlete: Athlete = {
     name: opts.name || "Runner",
     ctl,
@@ -661,6 +701,8 @@ export function derive(opts: {
     tsb,
     lthr,
     ltPace: ltPaceMin ? `${paceLabel(ltPaceMin)} /km` : null,
+    ltNote,
+    bests,
     formLabel,
     formClass,
     mets: st.m,
@@ -691,6 +733,7 @@ export function derive(opts: {
         min: a.min,
         hr: a.hr,
         pace: pace > 0 ? `${paceLabel(pace)} /km` : "—",
+        segs: details[a.id]?.segs ? mergeSegs(details[a.id].segs as NonNullable<ActDetail["segs"]>) : undefined,
       };
     });
 
@@ -712,12 +755,13 @@ export function derive(opts: {
     athlete,
     plan,
     goalEst,
+    goalBest,
     history,
     week,
     weekKm,
     weekSessions,
     weekLoad: loadDays(opts.acts, 7),
-    review: reviewToday(opts.acts, st.m, st.s),
+    review: reviewToday(opts.acts, st.m, st.s, details),
     nextStage: st.s,
   };
 }

@@ -14,6 +14,36 @@ export type Act = {
   name: string;
 };
 
+export type SegStat = {
+  title: string;
+  kind: StepKind;
+  sec: number;
+  /** dtk/km, null kalau jarak terlalu pendek */
+  pace: number | null;
+  hr: number | null;
+  intensity: Intensity;
+  lo: number;
+  hi: number;
+};
+
+/** Ringkasan kecil hasil olah data per detik satu aktivitas. */
+export type ActDetail = {
+  id: string;
+  /** rekor jarak: "1" | "3" | "5" | "10" → detik */
+  bests: Record<string, number>;
+  /** [pace dtk/km, HR rata-rata, detik] untuk titik tekuk LT */
+  bins: [number, number, number][];
+  segs?: SegStat[];
+  /** id menu yang sudah dicocokkan (supaya tidak diambil ulang tiap sinkron) */
+  segMenu?: string;
+  /** true kalau Intervals.icu tidak punya data per detik untuk aktivitas ini */
+  none?: boolean;
+};
+
+export type LtFit = { pace: number; hr: number; bins: number } | { reason: string };
+
+export type BestRow = { km: number; time: string | null; pace: string | null; date: string | null };
+
 export type Wellness = {
   id: string;
   restingHR: number | null;
@@ -53,6 +83,8 @@ export type Athlete = {
   tsb: number | null;
   lthr: number | null;
   ltPace: string | null;
+  ltNote: string | null;
+  bests: BestRow[];
   formLabel: string;
   formClass: "baik" | "sedang" | "lelah" | "kurang";
   mets: number | null;
@@ -64,6 +96,8 @@ export type Athlete = {
 };
 
 export type GoalEst = { current: string; basis: string; confidence: string };
+
+export type GoalBest = { km: number; time: string; pace: string; date: string };
 
 export type HistoryItem = {
   t: number;
@@ -77,12 +111,14 @@ export type HistoryItem = {
   min: number;
   hr: number;
   pace: string;
+  segs?: SegStat[];
 };
 
 export type Derived = {
   athlete: Athlete;
   plan: Plan;
   goalEst: GoalEst;
+  goalBest: GoalBest | null;
   history: HistoryItem[];
   week: { name: string; km: number; today: boolean }[];
   weekKm: number;
