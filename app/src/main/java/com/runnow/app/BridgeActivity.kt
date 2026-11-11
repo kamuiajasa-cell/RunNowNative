@@ -11,6 +11,7 @@ import android.webkit.GeolocationPermissions
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import android.webkit.ValueCallback
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
@@ -47,6 +48,21 @@ abstract class BridgeActivity : ComponentActivity() {
     }
 
     private var asking: CompletableDeferred<Set<String>>? = null
+
+    // Pemilih berkas untuk <input type="file"> di halaman (Pilih file CSV, cadangan, dan sebagainya).
+    private var fileCallback: ValueCallback<Array<Uri>>? = null
+    private val fileChooser = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val data = result.data
+        val clip = data?.clipData
+        val uris: Array<Uri>? = when {
+            result.resultCode != android.app.Activity.RESULT_OK || data == null -> null
+            clip != null -> Array(clip.itemCount) { clip.getItemAt(it).uri }
+            data.data != null -> arrayOf(data.data!!)
+            else -> null
+        }
+        fileCallback?.onReceiveValue(uris)
+        fileCallback = null
+    }
 
     // Izin lokasi untuk navigator.geolocation di halaman (menu Lari).
     private var geoOrigin: String? = null
@@ -195,6 +211,30 @@ abstract class BridgeActivity : ComponentActivity() {
                 }
             }
             webChromeClient = object : WebChromeClient() {
+                override fun onShowFileChooser(
+                    webView: WebView?,
+                    filePathCallback: ValueCallback<Array<Uri>>?,
+                    fileChooserParams: WebChromeClient.FileChooserParams?,
+                ): Boolean {
+                    fileCallback?.onReceiveValue(null)
+                    fileCallback = filePathCallback
+                    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "*/*"
+                        if (fileChooserParams?.mode == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) {
+                            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                        }
+                    }
+                    return try {
+                        fileChooser.launch(intent)
+                        true
+                    } catch (_: Exception) {
+                        fileCallback?.onReceiveValue(null)
+                        fileCallback = null
+                        false
+                    }
+                }
+
                 override fun onGeolocationPermissionsShowPrompt(origin: String?, callback: GeolocationPermissions.Callback?) {
                     val host = origin?.let { Uri.parse(it).host }
                     if (callback == null || origin == null || !(host == ORIGIN_HOST || isTrustedHost(host))) {
