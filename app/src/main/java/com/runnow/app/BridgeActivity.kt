@@ -7,6 +7,8 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
 import android.webkit.WebResourceRequest
+import android.webkit.GeolocationPermissions
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -45,6 +47,17 @@ abstract class BridgeActivity : ComponentActivity() {
     }
 
     private var asking: CompletableDeferred<Set<String>>? = null
+
+    // Izin lokasi untuk navigator.geolocation di halaman (menu Lari).
+    private var geoOrigin: String? = null
+    private var geoCallback: GeolocationPermissions.Callback? = null
+    private val geoPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        val ok = result[android.Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            result[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        geoCallback?.invoke(geoOrigin, ok, false)
+        geoCallback = null
+        geoOrigin = null
+    }
 
     // Izin tulis Health Connect: dialog milik Health Connect, hasilnya izin yang sekarang diberikan.
     private val healthConnect = registerForActivityResult(HealthConnectPermissions()) { granted ->
@@ -117,6 +130,12 @@ abstract class BridgeActivity : ComponentActivity() {
     /** Buka layar lain untuk `openScreen`. False kalau layar itu tidak ada. */
     protected abstract fun openRoute(route: String): Boolean
 
+    /** True selama halaman merekam lari: WebView tidak dijeda saat layar mati supaya GPS dan detak jantung tetap masuk. */
+    protected open fun keepWebAlive(): Boolean = false
+
+    /** Host tambahan (selain runnow.local) yang boleh dibuka di dalam WebView ini. */
+    protected open fun isTrustedHost(host: String?): Boolean = false
+
     /** Hook untuk menambah antarmuka JS lain ke WebView. */
     protected open fun onWebCreated(web: WebView) {}
 
@@ -156,7 +175,7 @@ abstract class BridgeActivity : ComponentActivity() {
             webViewClient = object : WebViewClient() {
                 override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                     val u = request.url
-                    // RunSense memanggil /api/icu/...; di aplikasi, permintaan itu diteruskan ke Intervals.icu dari sini.
+                    // Run Now memanggil /api/icu/...; di aplikasi, permintaan itu diteruskan ke Intervals.icu dari sini.
                     if (u.host == ORIGIN_HOST && u.path?.startsWith("/api/icu/") == true) return proxyIcu(request)
                     return loader.shouldInterceptRequest(u)
                 }
@@ -167,12 +186,30 @@ abstract class BridgeActivity : ComponentActivity() {
 
                 // Hanya halaman bawaan yang dibuka di sini; tautan lain dibuka di browser.
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                    if (request.url.host == ORIGIN_HOST) return false
+                    if (request.url.host == ORIGIN_HOST || isTrustedHost(request.url.host)) return false
                     try {
                         startActivity(Intent(Intent.ACTION_VIEW, request.url))
                     } catch (_: Exception) {
                     }
                     return true
+                }
+            }
+            webChromeClient = object : WebChromeClient() {
+                override fun onGeolocationPermissionsShowPrompt(origin: String?, callback: GeolocationPermissions.Callback?) {
+                    val host = origin?.let { Uri.parse(it).host }
+                    if (callback == null || origin == null || !(host == ORIGIN_HOST || isTrustedHost(host))) {
+                        callback?.invoke(origin, false, false)
+                        return
+                    }
+                    val fine = android.Manifest.permission.ACCESS_FINE_LOCATION
+                    val coarse = android.Manifest.permission.ACCESS_COARSE_LOCATION
+                    if (checkSelfPermission(fine) == PackageManager.PERMISSION_GRANTED) {
+                        callback.invoke(origin, true, false)
+                    } else {
+                        geoOrigin = origin
+                        geoCallback = callback
+                        geoPermission.launch(arrayOf(fine, coarse))
+                    }
                 }
             }
             // `rn(...)` di halaman memanggil window.ReactNativeWebView.postMessage, jadi jembatan memakai nama itu.
@@ -199,8 +236,11 @@ abstract class BridgeActivity : ComponentActivity() {
     }
 
     override fun onPause() {
-        bridge.setLive(false)
-        web.onPause()
+        // Saat merekam lari, biarkan WebView dan detak jantung live tetap jalan walau layar mati.
+        if (!keepWebAlive()) {
+            bridge.setLive(false)
+            web.onPause()
+        }
         super.onPause()
     }
 

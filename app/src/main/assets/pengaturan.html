@@ -746,7 +746,7 @@ var G = [
   },
   {
     id: "health-connect", title: "Health Connect (Google)",
-    sub: "Salin data jam ke Health Connect supaya bisa dibaca aplikasi lain. RunSense hanya menulis, tidak pernah membaca data aplikasi lain.",
+    sub: "Salin data jam ke Health Connect supaya bisa dibaca aplikasi lain. Run Now hanya menulis, tidak pernah membaca data aplikasi lain.",
     load: { hc: "getHealthConnectStatus" },
     items: [
       { t: "note", need: ["hc"], warn: true, vis: function (s) { return s.hc.availability !== "available"; },

@@ -1,6 +1,6 @@
 {
-  "name": "RunSense",
-  "short_name": "RunSense",
+  "name": "Run Now",
+  "short_name": "Run Now",
   "description": "Coach lari dengan menu langsung ke Huawei Watch Fit 2.",
   "start_url": "./",
   "display": "standalone",
