@@ -15,7 +15,8 @@ import {
 } from "lucide-react";
 import { WatchFace } from "./watch-face";
 import { useRun, syncNow, localDay, bytesToB64, b64ToBytes, type WatchMenu } from "@/lib/runsense/store";
-import { derive, greeting, f1, band, durText, metsAt, planSeconds, STAGE_TIPS } from "@/lib/runsense/engine";
+import { derive, greeting, f1, band, durText, metsAt, paceLabel, planSeconds, STAGE_TIPS } from "@/lib/runsense/engine";
+import { segVerdict } from "@/lib/runsense/streams";
 import { encodeCourse, downloadCourse } from "@/lib/runsense/course";
 import { bleSupported, pickHuaweiWatch } from "@/lib/runsense/watch-ble";
 import { deliverSchedule, openScreen, watchBridgeReady, type NativeScreen } from "@/lib/runsense/watch-push";
@@ -39,6 +40,7 @@ function useDerived() {
   const stage = useRun((s) => s.stage);
   const acts = useRun((s) => s.acts);
   const wellness = useRun((s) => s.wellness);
+  const details = useRun((s) => s.details);
   const skippedDay = useRun((s) => s.skippedDay);
   return useMemo(
     () =>
@@ -53,8 +55,9 @@ function useDerived() {
         age,
         prevStage: stage,
         skipped: skippedDay === localDay(),
+        details,
       }),
-    [acts, wellness, goal, style, name, rest, max, age, stage, skippedDay],
+    [acts, wellness, details, goal, style, name, rest, max, age, stage, skippedDay],
   );
 }
 
@@ -390,9 +393,24 @@ function Home({
       )}
 
       <article className="mt-3 rounded-card border border-line bg-surface p-5">
-        <p className="text-xs font-bold tracking-widest text-muted">TARGET {goal}</p>
-        <p className="mt-1 text-4xl font-extrabold tracking-tight">{view.goalEst.current}</p>
-        <p className="text-sm text-muted">Estimasi saat ini · {view.goalEst.confidence}</p>
+        {view.goalBest ? (
+          <>
+            <p className="text-xs font-bold tracking-widest text-muted">TERBAIK {view.goalBest.km}K</p>
+            <p className="mt-1 text-4xl font-extrabold tracking-tight">{view.goalBest.time}</p>
+            <p className="text-sm text-muted">
+              {view.goalBest.pace} · {view.goalBest.date}
+            </p>
+            <p className="mt-2 text-sm text-muted">
+              Estimasi {goal}: {view.goalEst.current} · {view.goalEst.confidence}
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-xs font-bold tracking-widest text-muted">ESTIMASI {goal}</p>
+            <p className="mt-1 text-4xl font-extrabold tracking-tight">{view.goalEst.current}</p>
+            <p className="text-sm text-muted">Perkiraan · {view.goalEst.confidence}</p>
+          </>
+        )}
       </article>
 
       <div className="mt-3 grid grid-cols-3 gap-2">
@@ -429,6 +447,7 @@ function Home({
           <Row k="LTHR" v={a.lthr ? `${a.lthr} bpm` : "—"} />
           <Row k="LT pace" v={a.ltPace || "—"} />
         </dl>
+        {a.ltNote && <p className="mt-2 text-xs leading-relaxed text-muted">{a.ltNote}</p>}
         <p className="mt-3 text-sm leading-relaxed text-muted">
           <span className="font-semibold text-lime">T{a.stage}. </span>
           {STAGE_TIPS[a.stage] || "Belum cukup data."}
@@ -647,6 +666,23 @@ function Progress() {
     <div className="rise space-y-3">
       <h1 className="text-2xl font-extrabold tracking-tight">Progress</h1>
       <article className="rounded-card border border-line bg-surface p-5">
+        <p className="text-xs font-bold tracking-widest text-muted">REKOR TERBAIK</p>
+        {a.bests.some((b) => b.time) ? (
+          <ul className="mt-3 space-y-2 text-sm">
+            {a.bests.map((b) => (
+              <li key={b.km} className="flex justify-between gap-3">
+                <span className="text-muted">{b.km}K</span>
+                <span className={b.time ? "font-semibold" : "text-muted"}>
+                  {b.time ? `${b.time} · ${b.pace} · ${b.date}` : "—"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-3 text-sm text-muted">Belum ada data per detik. Rekor muncul setelah lari tersinkron dari Intervals.icu.</p>
+        )}
+      </article>
+      <article className="rounded-card border border-line bg-surface p-5">
         <p className="text-xs font-bold tracking-widest text-muted">ESTIMASI {goal}</p>
         <p className="mt-1 text-4xl font-extrabold tracking-tight">{view.goalEst.current}</p>
         <p className="mt-1 text-sm text-lime">{view.goalEst.basis}</p>
@@ -662,6 +698,7 @@ function Progress() {
           <Row k="CTL" v={a.ctl != null ? a.ctl.toFixed(1) : "—"} />
           <Row k="TSB" v={a.tsb != null ? a.tsb.toFixed(1) : "—"} />
         </dl>
+        {a.ltNote && <p className="mt-3 text-xs leading-relaxed text-muted">{a.ltNote}</p>}
       </article>
       <article className="rounded-card border border-line bg-surface p-5">
         <p className="text-xs font-bold tracking-widest text-muted">REFERENSI</p>
@@ -728,7 +765,7 @@ function ActSheet({ item, onClose }: { item: HistoryItem; onClose: () => void })
   return (
     <div className="scrim fixed inset-0 z-40 flex items-end justify-center" onClick={onClose}>
       <div
-        className="w-full max-w-md rounded-t-3xl bg-surface p-5 pb-8"
+        className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-surface p-5 pb-8"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-start justify-between">
@@ -750,6 +787,26 @@ function ActSheet({ item, onClose }: { item: HistoryItem; onClose: () => void })
           <p className="mt-3 rounded-2xl bg-surface-2 px-3 py-3 text-sm">
             Intensitas ≈ <span className="font-semibold text-lime">{pct}%</span> kapasitas · tahan {durText(pct / 100)}
           </p>
+        )}
+        {item.segs && item.segs.length > 0 && (
+          <div className="mt-4 space-y-2">
+            <p className="text-xs font-bold tracking-widest text-muted">PER SEGMEN</p>
+            {item.segs.map((g, i) => {
+              const v = segVerdict(g, item.segs || []);
+              return (
+                <div key={i} className="rounded-2xl bg-surface-2 px-3 py-3 text-sm">
+                  <div className="flex justify-between gap-3">
+                    <span className="font-semibold">{g.title}</span>
+                    <span>
+                      {g.pace != null ? `${paceLabel(g.pace / 60)} /km` : "—"}
+                      {g.hr ? ` · HR ${g.hr}` : ""}
+                    </span>
+                  </div>
+                  {v && <p className={`mt-1 ${v.tone === "g" ? "text-lime" : "text-amber"}`}>{v.text}</p>}
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
     </div>
