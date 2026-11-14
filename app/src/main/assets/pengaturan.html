@@ -334,6 +334,7 @@ var G = [
     load: {},
     items: [
       { t: "serverurl" },
+      { t: "brandcfg" },
       { t: "note", warn: true, text: "Isi hanya alamat server yang kamu percaya: halaman itu bisa memakai jembatan ke jam dan data kesehatan di aplikasi ini." }
     ]
   },
@@ -1672,6 +1673,49 @@ KIND.serverurl = function (g, it) {
   r.onclick = function () { apply(S2.reset(), "Kembali ke URL bawaan."); };
   row.appendChild(r);
   row.appendChild(el("small", "", "Tanpa https:// akan ditambahkan otomatis. http:// (mis. server di jaringan lokal) juga bisa.")).style.color = "var(--mt)";
+  return row;
+};
+
+/* Nama, ikon, splash, dan badge dari manifest server: diambil dan disimpan aplikasi lewat window.RunNowServer. */
+KIND.brandcfg = function (g, it) {
+  var S2 = window.RunNowServer;
+  var row = el("div", "row col");
+  if (!S2 || !S2.brand) return row;
+  var lb = el("div", "lb"); lb.appendChild(el("b", "", "Nama, ikon, splash, dan badge dari server"));
+  var info = el("small", "", ""); lb.appendChild(info); row.appendChild(lb);
+  function yn(v) { return v ? "ada" : "tidak ada (pakai bawaan)"; }
+  function draw() {
+    var b = {};
+    try { b = JSON.parse(S2.brand()); } catch (e) {}
+    info.textContent = b.ok
+      ? "Nama: " + (b.name || "-") + ". Ikon: " + yn(b.hasIcon) + ". Splash: " + yn(b.hasSplash) + ". Badge notifikasi: " + yn(b.hasBadge) + "."
+      : "Belum diambil dari server. Dibaca dari manifest.webmanifest di URL di atas.";
+  }
+  draw();
+  var rf = el("button", "btn sm", "Ambil ulang dari server"); rf.type = "button";
+  rf.onclick = function () {
+    rf.disabled = true; rf.textContent = "Mengambil\u2026";
+    S2.brandRefresh();
+  };
+  window.onBrandUpdated = function () {
+    rf.disabled = false; rf.textContent = "Ambil ulang dari server";
+    draw();
+    var b = {};
+    try { b = JSON.parse(S2.brand()); } catch (e) {}
+    toast(b.ok ? "Nama, ikon, splash, dan badge diperbarui dari server." : "Gagal mengambil manifest dari server.", !b.ok);
+  };
+  var pin = el("button", "btn g", "Pasang pintasan di layar utama"); pin.type = "button";
+  pin.onclick = function () {
+    var r = S2.brandPin();
+    if (r === "ok") toast("Konfirmasi pemasangan pintasan muncul di layar.");
+    else if (r === "no-brand") toast("Ambil dari server dulu.", true);
+    else if (r === "unsupported") toast("Peluncur HP ini tidak mendukung pintasan.", true);
+    else toast("Pintasan gagal dipasang.", true);
+  };
+  var rs = el("button", "btn g", "Hapus data dari server (kembali ke bawaan)"); rs.type = "button";
+  rs.onclick = function () { S2.brandReset(); draw(); toast("Kembali ke nama, ikon, splash, dan badge bawaan."); };
+  row.appendChild(rf); row.appendChild(pin); row.appendChild(rs);
+  row.appendChild(el("small", "", "Splash, badge notifikasi, dan nama/ikon di layar Recents langsung mengikuti server. Ikon peluncur dan nama di daftar aplikasi dibuat Android saat dipasang dan tidak bisa diubah dari dalam aplikasi; pintasan di atas memberi nama + ikon dari server.")).style.color = "var(--mt)";
   return row;
 };
 
