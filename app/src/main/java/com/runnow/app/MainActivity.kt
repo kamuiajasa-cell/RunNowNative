@@ -33,6 +33,26 @@ class MainActivity : BridgeActivity() {
 
     override fun openRoute(route: String): Boolean = Routes.open(this, route)
 
+    // Splash memakai ikon, warna latar, dan nama dari manifest server (cache terakhir).
+    override fun splashView(): android.view.View? = BrandConfig.splashView(this)
+
+    // Nama + ikon dari server dipakai di layar Recents.
+    @Suppress("DEPRECATION")
+    private fun applyTaskDescription() {
+        val b = BrandConfig.load(this) ?: return
+        try {
+            val size = getSystemService(android.app.ActivityManager::class.java)?.launcherLargeIconSize ?: 0
+            setTaskDescription(
+                android.app.ActivityManager.TaskDescription(
+                    b.title.ifBlank { null },
+                    BrandConfig.icon(this)?.let { BrandConfig.scaled(it, size) },
+                    b.theme?.let { BrandConfig.opaque(it) } ?: 0,
+                ),
+            )
+        } catch (_: Exception) {
+        }
+    }
+
     // Notifikasi pengingat: Android.setPlan dan Android.test.
     override fun onWebCreated(web: WebView) {
         // Halaman utama menerima data jam (wellness, aktivitas, latihan) lewat window.nativeImport.
@@ -45,11 +65,14 @@ class MainActivity : BridgeActivity() {
 
     override fun onPageLoaded() {
         bridge.pushWatchData()
+        // Ambil ulang nama/ikon/splash/badge dari manifest server (dibatasi: tidak tiap halaman).
+        BrandConfig.refreshAsync(this, loadedUrl, force = false) { ok -> if (ok) applyTaskDescription() }
     }
 
     override fun onResume() {
         super.onResume()
         errorShown = false
+        applyTaskDescription()
         // URL diubah di layar pengaturan: muat URL baru.
         val now = ServerConfig.get(this)
         if (now != loadedUrl) {

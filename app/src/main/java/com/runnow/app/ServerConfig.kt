@@ -34,7 +34,7 @@ internal object ServerConfig {
 }
 
 /** Dipakai pengaturan.html (kelompok "Alamat server") lewat window.RunNowServer. */
-internal class ServerBridge(private val ctx: Context) {
+internal class ServerBridge(private val ctx: Context, private val onBrandDone: () -> Unit = {}) {
     @JavascriptInterface fun get(): String = ServerConfig.get(ctx)
 
     @JavascriptInterface fun defaultUrl(): String = ServerConfig.DEFAULT_URL
@@ -49,5 +49,22 @@ internal class ServerBridge(private val ctx: Context) {
     @JavascriptInterface fun reset(): String {
         ServerConfig.set(ctx, null)
         return ServerConfig.DEFAULT_URL
+    }
+
+    /** JSON ringkasan nama/ikon/splash/badge dari server: {ok, name, hasIcon, hasSplash, hasBadge, ...}. */
+    @JavascriptInterface fun brand(): String = BrandConfig.describe(ctx)
+
+    /** Ambil ulang dari manifest server di latar belakang; selesai → window.onBrandUpdated(). */
+    @JavascriptInterface fun brandRefresh(): String {
+        BrandConfig.refreshAsync(ctx, ServerConfig.get(ctx), force = true) { onBrandDone() }
+        return "started"
+    }
+
+    /** Minta peluncur memasang pintasan layar utama bernama + berikon dari server: ok / no-brand / unsupported / failed. */
+    @JavascriptInterface fun brandPin(): String = BrandConfig.requestPin(ctx)
+
+    @JavascriptInterface fun brandReset(): String {
+        BrandConfig.clear(ctx)
+        return "ok"
     }
 }

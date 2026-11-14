@@ -50,6 +50,14 @@ abstract class BridgeActivity : ComponentActivity() {
 
     private var asking: CompletableDeferred<Set<String>>? = null
 
+    private var splash: android.view.View? = null
+
+    private fun hideSplash() {
+        val s = splash ?: return
+        splash = null
+        s.animate().alpha(0f).setDuration(220).withEndAction { (s.parent as? android.view.ViewGroup)?.removeView(s) }.start()
+    }
+
     // Pemilih berkas untuk <input type="file"> di halaman (Pilih file CSV, cadangan, dan sebagainya).
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     private val fileChooser = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -153,6 +161,9 @@ abstract class BridgeActivity : ComponentActivity() {
     /** Host tambahan (selain runnow.local) yang boleh dibuka di dalam WebView ini. */
     protected open fun isTrustedHost(host: String?): Boolean = false
 
+    /** Layar splash yang menutupi WebView sampai halaman utama selesai dimuat. Null = tanpa splash. */
+    protected open fun splashView(): android.view.View? = null
+
     /** Hook untuk menambah antarmuka JS lain ke WebView. */
     protected open fun onWebCreated(web: WebView) {}
 
@@ -201,11 +212,15 @@ abstract class BridgeActivity : ComponentActivity() {
                 }
 
                 override fun onPageFinished(view: WebView, url: String?) {
+                    hideSplash()
                     onPageLoaded()
                 }
 
                 override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-                    if (request.isForMainFrame) onLoadError(request.url.toString(), error.description?.toString().orEmpty())
+                    if (request.isForMainFrame) {
+                        hideSplash()
+                        onLoadError(request.url.toString(), error.description?.toString().orEmpty())
+                    }
                 }
 
                 // Hanya halaman bawaan yang dibuka di sini; tautan lain dibuka di browser.
@@ -264,7 +279,13 @@ abstract class BridgeActivity : ComponentActivity() {
             addJavascriptInterface(bridge, "ReactNativeWebView")
         }
         onWebCreated(web)
-        setContentView(web)
+        val root = android.widget.FrameLayout(this)
+        root.addView(web, android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.MATCH_PARENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT))
+        splash = splashView()
+        splash?.let { root.addView(it, android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.MATCH_PARENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT)) }
+        setContentView(root)
+        // Pengaman: splash tidak boleh menutupi layar selamanya kalau halaman lambat atau tidak pernah selesai.
+        if (splash != null) web.postDelayed({ hideSplash() }, 6000)
         web.loadUrl(startUrl())
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {

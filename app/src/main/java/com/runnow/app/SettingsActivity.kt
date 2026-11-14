@@ -18,7 +18,10 @@ class SettingsActivity : BridgeActivity() {
 
     // Kelompok "Alamat server" di pengaturan.html membaca dan menyimpan URL lewat window.RunNowServer.
     override fun onWebCreated(web: WebView) {
-        web.addJavascriptInterface(ServerBridge(applicationContext), "RunNowServer")
+        web.addJavascriptInterface(
+            ServerBridge(applicationContext) { host.eval("window.onBrandUpdated&&window.onBrandUpdated();") },
+            "RunNowServer",
+        )
     }
 
     /** Pindah ke kelompok lain tanpa membuka layar baru. Kosong = kembali ke daftar. */

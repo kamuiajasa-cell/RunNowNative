@@ -27,7 +27,8 @@ class RunTrackService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val notif = Notification.Builder(this, CHANNEL)
-            .setSmallIcon(R.drawable.ic_stat_runnow)
+            .setSmallIcon(BrandConfig.statIcon(this))
+            .setColor(BrandConfig.accent(this))
             .setContentTitle("Run Now sedang merekam lari")
             .setContentText("Ketuk untuk kembali ke layar lari")
             .setOngoing(true)
