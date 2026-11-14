@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.GeolocationPermissions
 import android.webkit.WebChromeClient
@@ -155,6 +156,9 @@ abstract class BridgeActivity : ComponentActivity() {
     /** Hook untuk menambah antarmuka JS lain ke WebView. */
     protected open fun onWebCreated(web: WebView) {}
 
+    /** Halaman utama gagal dimuat (mis. URL salah atau tidak ada koneksi). */
+    protected open fun onLoadError(url: String, reason: String) {}
+
     /** Halaman selesai dimuat. */
     protected open fun onPageLoaded() {}
 
@@ -198,6 +202,10 @@ abstract class BridgeActivity : ComponentActivity() {
 
                 override fun onPageFinished(view: WebView, url: String?) {
                     onPageLoaded()
+                }
+
+                override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                    if (request.isForMainFrame) onLoadError(request.url.toString(), error.description?.toString().orEmpty())
                 }
 
                 // Hanya halaman bawaan yang dibuka di sini; tautan lain dibuka di browser.

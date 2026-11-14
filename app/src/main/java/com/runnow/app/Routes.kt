@@ -9,7 +9,7 @@ import android.content.Intent
 internal object Routes {
     /** Kelompok yang ada di pengaturan.html. Tambah di sini bersama kelompok baru di tabel G pada pengaturan.html. */
     private val GROUPS = setOf(
-        "sinkron", "dasar", "cuaca", "notifikasi", "aplikasi", "alarm", "gnss", "rute", "kursus", "hidup-sehat", "wajah", "foto-jam", "kustom-wajah", "keselamatan", "tidur-siklus", "target", "latihan-jam", "kesehatan", "health-connect", "impor-huawei", "musik",
+        "sinkron", "dasar", "cuaca", "notifikasi", "aplikasi", "alarm", "gnss", "rute", "kursus", "hidup-sehat", "wajah", "foto-jam", "kustom-wajah", "keselamatan", "tidur-siklus", "target", "latihan-jam", "kesehatan", "health-connect", "impor-huawei", "musik", "server",
     )
 
     private val ALIAS = mapOf("/settings/notification-apps" to "aplikasi", "/watch/alarms" to "alarm", "/watch/faces" to "wajah", "/settings/import-huawei" to "impor-huawei")

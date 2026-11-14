@@ -1,5 +1,6 @@
 package com.runnow.app
 
+import android.webkit.WebView
 import org.json.JSONObject
 
 /**
@@ -14,6 +15,11 @@ class SettingsActivity : BridgeActivity() {
     }
 
     override fun openRoute(route: String): Boolean = Routes.open(this, route)
+
+    // Kelompok "Alamat server" di pengaturan.html membaca dan menyimpan URL lewat window.RunNowServer.
+    override fun onWebCreated(web: WebView) {
+        web.addJavascriptInterface(ServerBridge(applicationContext), "RunNowServer")
+    }
 
     /** Pindah ke kelompok lain tanpa membuka layar baru. Kosong = kembali ke daftar. */
     fun goGroup(group: String) {

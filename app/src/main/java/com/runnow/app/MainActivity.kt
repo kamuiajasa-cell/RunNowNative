@@ -1,21 +1,35 @@
 package com.runnow.app
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.webkit.WebView
+import android.widget.Toast
 import com.joyodigitama.huaweiwear.WatchDataSignal
 
-/** Layar utama: https://runnow2.kamui-aja-sa.workers.dev di dalam WebView, ditambah jembatan ke Huawei core. */
+/** Layar utama: situs Run Now (URL diatur di Pengaturan > Alamat server) di dalam WebView, ditambah jembatan ke Huawei core. */
 class MainActivity : BridgeActivity() {
-    private companion object {
-        const val REMOTE_HOST = "runnow2.kamui-aja-sa.workers.dev"
-        const val REMOTE_URL = "https://$REMOTE_HOST"
-    }
+    // URL yang sedang dimuat; dipakai untuk mendeteksi perubahan dari layar pengaturan.
+    private var loadedUrl: String = ""
+    private var errorShown = false
 
-    // Halaman utama kini memuat situs Run Now langsung dari Cloudflare Workers.
-    override fun startUrl(): String = REMOTE_URL
+    // Selalu URL terakhir yang disimpan, jadi aplikasi dibuka ulang langsung memuat URL itu.
+    override fun startUrl(): String = ServerConfig.get(this).also { loadedUrl = it }
 
     // Tautan di dalam situs Run Now tetap dibuka di WebView, bukan di browser.
-    override fun isTrustedHost(host: String?): Boolean = host == REMOTE_HOST
+    override fun isTrustedHost(host: String?): Boolean =
+        host != null && (host == ServerConfig.DEFAULT_HOST || host == Uri.parse(ServerConfig.get(this)).host)
+
+    // URL gagal dimuat: buka langsung Pengaturan > Alamat server supaya bisa diperbaiki.
+    override fun onLoadError(url: String, reason: String) {
+        if (Uri.parse(url).host == ORIGIN_HOST) return
+        runOnUiThread {
+            if (isFinishing || errorShown) return@runOnUiThread
+            errorShown = true
+            Toast.makeText(this, "Gagal memuat $url ($reason)", Toast.LENGTH_LONG).show()
+            startActivity(Intent(this, SettingsActivity::class.java).putExtra(SettingsActivity.EXTRA_GROUP, "server"))
+        }
+    }
 
     override fun openRoute(route: String): Boolean = Routes.open(this, route)
 
@@ -35,6 +49,13 @@ class MainActivity : BridgeActivity() {
 
     override fun onResume() {
         super.onResume()
+        errorShown = false
+        // URL diubah di layar pengaturan: muat URL baru.
+        val now = ServerConfig.get(this)
+        if (now != loadedUrl) {
+            loadedUrl = now
+            web.loadUrl(now)
+        }
         // Setelah impor ekspor Huawei (di layar pengaturan) isi database jam berubah: kirim ulang ke halaman.
         if (WatchDataSignal.take()) bridge.pushWatchData()
     }
