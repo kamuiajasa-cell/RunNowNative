@@ -329,6 +329,15 @@ function cdBuild(d) {
 var mnt = function (n) { return n + " menit"; };
 var G = [
   {
+    id: "server", title: "Alamat server",
+    sub: "URL Run Now yang dibuka di layar utama. Tersimpan di HP, jadi saat aplikasi ditutup lalu dibuka lagi, URL terakhir ini yang dimuat.",
+    load: {},
+    items: [
+      { t: "serverurl" },
+      { t: "note", warn: true, text: "Isi hanya alamat server yang kamu percaya: halaman itu bisa memakai jembatan ke jam dan data kesehatan di aplikasi ini." }
+    ]
+  },
+  {
     id: "sinkron", title: "Sinkron dan latar belakang",
     sub: "Kapan data jam diambil, dan agar tetap jalan saat aplikasi ditutup.",
     load: { b: "getBackgroundStatus", r: "getBackgroundRestrictions", wi: "getWatchImportSummary" },
@@ -1632,6 +1641,37 @@ KIND.facecustom = function (g, it) {
   });
   sel.onchange = function () { cfg = null; draw(); };
   row.appendChild(rd); row.appendChild(box);
+  return row;
+};
+
+/* Alamat server: dibaca dan disimpan langsung lewat window.RunNowServer (bukan lewat rn). */
+KIND.serverurl = function (g, it) {
+  var S2 = window.RunNowServer;
+  var row = el("div", "row col");
+  if (!S2) { row.appendChild(el("small", "", "Pengaturan alamat server hanya bisa diubah dari aplikasi.")).style.color = "var(--mt)"; return row; }
+  var cur = S2.get(), def = S2.defaultUrl();
+  var lb = el("div", "lb"); lb.appendChild(el("b", "", "URL Run Now"));
+  var hint = el("small", "", cur === def ? "Sekarang: URL bawaan." : "Sekarang: " + cur);
+  lb.appendChild(hint); row.appendChild(lb);
+  var line = el("div", "inline");
+  var inp = el("input"); inp.type = "text"; inp.inputMode = "url"; inp.autocomplete = "off"; inp.autocapitalize = "none"; inp.spellcheck = false;
+  inp.placeholder = def; inp.value = cur; inp.setAttribute("aria-label", "URL Run Now");
+  var b = el("button", "btn sm", "Simpan"); b.type = "button";
+  line.appendChild(inp); line.appendChild(b); row.appendChild(line);
+  function apply(url, msg) {
+    inp.value = url;
+    hint.textContent = url === def ? "Sekarang: URL bawaan." : "Sekarang: " + url;
+    toast(msg);
+  }
+  b.onclick = function () {
+    var url = S2.save(inp.value);
+    if (!url) { toast("URL tidak valid. Contoh: https://contoh.workers.dev", true); inp.focus(); return; }
+    apply(url, "Tersimpan. Kembali ke halaman utama untuk memuat URL baru.");
+  };
+  var r = el("button", "btn g", "Kembalikan ke URL bawaan"); r.type = "button";
+  r.onclick = function () { apply(S2.reset(), "Kembali ke URL bawaan."); };
+  row.appendChild(r);
+  row.appendChild(el("small", "", "Tanpa https:// akan ditambahkan otomatis. http:// (mis. server di jaringan lokal) juga bisa.")).style.color = "var(--mt)";
   return row;
 };
 
