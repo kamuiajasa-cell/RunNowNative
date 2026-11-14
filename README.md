@@ -52,6 +52,22 @@ Halaman web menggunakan pola RPC yang sudah dipakai oleh kode Run Now:
 
 Objek JavaScript `Android` terpisah digunakan untuk fungsi Android tertentu, termasuk penjadwalan pengingat latihan. Jangan menambahkan metode bridge tanpa validasi argumen dan pembatasan metode yang boleh dipanggil.
 
+## Nama, ikon, splash, dan badge dari server
+
+Aplikasi membaca `manifest.webmanifest` dari URL yang dimuat layar utama (Pengaturan > Alamat server), lalu menyimpannya di cache perangkat (`BrandConfig.kt`):
+
+| Elemen | Sumber di server | Dipakai untuk |
+|---|---|---|
+| Nama | `name` / `short_name` | splash, layar Recents, pintasan |
+| Ikon | `icons` (terbesar, bukan monochrome) | splash, layar Recents, pintasan |
+| Splash | kunci `splash` (URL gambar), cadangan: ikon; warna latar dari `background_color` | splash dalam aplikasi saat halaman dimuat |
+| Badge | kunci `badge` (URL gambar), atau ikon `purpose: monochrome`, atau `badge-96.png` | ikon kecil notifikasi (pengingat latihan dan rekam lari) |
+| Warna aksen | `theme_color` | warna notifikasi dan layar Recents |
+
+Badge harus PNG dengan latar transparan (Android hanya memakai kanal alfa); kalau tidak, dipakai ikon bawaan. Cache diperbarui paling cepat tiap 12 jam, atau lewat tombol **Ambil ulang dari server** di Pengaturan > Alamat server.
+
+Batasan Android: ikon peluncur dan nama di daftar aplikasi dibuat dari `AndroidManifest.xml` saat APK dipasang dan tidak bisa diubah dari dalam aplikasi. Untuk itu tersedia tombol **Pasang pintasan di layar utama** yang membuat pintasan bernama dan berikon dari server. Splash sistem Android 12+ (sebelum aplikasi tampil) tetap memakai ikon bawaan APK; splash dari server tampil tepat setelahnya.
+
 ## Teknologi
 
 | Komponen | Versi / konfigurasi |
