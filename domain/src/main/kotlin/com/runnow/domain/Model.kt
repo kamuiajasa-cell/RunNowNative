@@ -53,6 +53,12 @@ data class Profile(
     val age: Int = 0,
     /** Tahap terakhir yang tersimpan (untuk histeresis). 0 = belum ada. */
     val afS: Int = 0,
+    /** state.restManual: true = RHR diketik sendiri, false = otomatis rata-rata 28 hari (Langkah 3). */
+    val restManual: Boolean = false,
+    /** state.lthrC: LTHR custom (bpm), 0 = pakai auto (Langkah 3). */
+    val lthrC: Int = 0,
+    /** state.ltpC: LTPace custom (detik/km), 0 = pakai auto (Langkah 3). */
+    val ltpC: Int = 0,
 )
 
 /**
@@ -153,6 +159,8 @@ data class Settings(
     val heat: String = "",
     val flag: LegFlag? = null,
     val athlete: AthleteSettings = AthleteSettings(),
+    /** state.goal: "5K" | "10K" | "Half" | "Marathon" | "Umum" (Langkah 3). */
+    val goal: String = "5K",
 )
 
 data class RacePhase(val days: Int, val k: String)
