@@ -61,9 +61,26 @@ tanpa wellness, tanpa lari, max HR < 140, rentang HR < 40, LTHR/LTPace custom, R
 Buat ulang: `cd domain/gen && RUNSENSE_HTML=/path/ke/runsense.html node gen_process.js`.
 Semua generator kini mencari awal engine lewat penanda `const clamp`, jadi tahan terhadap pergeseran nomor baris HTML.
 
+## Langkah 4 (review lari dan stream)
+
+| HTML | Kotlin |
+|---|---|
+| `reviewRun(a)` | `Snapshot.reviewRun(act)` di `Review.kt` -> `RunReview` (tone, headline, summary, sections, flat) |
+| `reviewHeadline` | `reviewHeadline(RunReview?)` dan `reviewHeadline(List<ReviewNote>)` (bentuk lama) |
+| `runBacktest` | `Snapshot.runBacktest()` -> `BacktestResult` (hanya hitungan; teks penjelas ditulis di UI) |
+| `summarizeStream(raw, a, minN)` | `Snapshot.summarizeStream(StreamData, minN)` di `Stream.kt` -> `StreamSummary?` |
+| `hwSummary(pts)` | `Snapshot.hwSummary(List<DoubleArray>)` |
+| `state.sx` | `Snapshot.streams` (kunci = icuId aktivitas) |
+| `state.athlete` dibaca `reviewRun` | `Settings.athlete`; isi lewat `Snapshot.withProcessed(processData())` |
+
+Urutan pakai di app: `val r = snap.processData(sync); val s2 = snap.withProcessed(r); s2.reviewRun(act)`.
+Pengurai JSON stream Intervals.icu (bentuk `[{type,data}]` atau objek) belum ada; itu masuk Langkah 6.
+Tes: `ReviewGoldenTest` + `golden_review.txt` (554 review, 78 backtest), `StreamGoldenTest` + `golden_stream.txt`
+(40 stream + 16 titik jam). Buat ulang: `node gen/gen_review.js` dan `node gen/gen_stream.js` dengan `RUNSENSE_HTML=...`.
+
 ## Belum diport (langkah berikutnya)
 
-`reviewRun`, `reviewHeadline`, `summarizeStream`, `hwSummary`, `runBacktest` (Langkah 4) dan modul cuaca `cl*` (Langkah 5). Semuanya memakai `Snapshot` yang sama.
+modul cuaca `cl*` (Langkah 5, opsional), lalu lapisan data (Langkah 6). Semuanya memakai `Snapshot` yang sama.
 
 ## Catatan
 
