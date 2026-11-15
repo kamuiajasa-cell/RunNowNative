@@ -25,7 +25,7 @@ class GoldenTest {
         Snapshot(Profile(rest, max, age, afS), acts, wl, vx, now, ZoneOffset.UTC)
 
     private fun scenario_A_lengkap_hrv_turun_snap(): Snapshot {
-        val acts = listOf(
+        val acts = listOf<Act>(
             act(1788685200000L, "RUN", 62.4, 9.08, 159.0, 49.0, "hw1788685200000", "Lari 70", 171.0, 78.0),
             act(1788771600000L, "WALK", 47.26, 2.26, 146.0, 32.0, "hw1788771600000", "Lari 69", 158.0, 55.0),
             act(1788858000000L, "RUN", 34.98, 5.58, 155.0, 64.0, "hw1788858000000", "Lari 68", 167.0, 0.0),
@@ -80,7 +80,7 @@ class GoldenTest {
             act(1794646800000L, "RUN", 51.49, 7.82, 165.0, 34.0, "hw1794646800000", "Lari 1", 177.0, 90.0),
             act(1794733200000L, "RUN", 22.63, 4.09, 173.0, 69.0, "hw1794733200000", "Lari 0", 185.0, 36.0),
         )
-        val wl = listOf(
+        val wl = listOf<Wellness>(
             Wellness("2026-10-06", restingHR = 53.0, rhrSrc = "jam", hrv = 61.0, hrvSrc = "jam", sleepSecs = 26214.0, stress = 37.0),
             Wellness("2026-10-07", restingHR = 53.0, rhrSrc = "jam", stress = 31.0),
             Wellness("2026-10-08", restingHR = 53.0, rhrSrc = "jam", hrv = 68.0, hrvSrc = "jam", sleepSecs = 23913.0, stress = 39.0),
@@ -146,7 +146,7 @@ class GoldenTest {
         assertEquals(false, g.unknown)
         assertEquals(4, g.afS)
         // load
-        val expLoads = listOf(78, 55, 43, 27, 37, 75, 62, 27, 42, 109, 80, 89, 113, 31, 32, 66, 33, 18, 95, 92, 104, 34, 15, 16, 18, 39, 23, 37, 62, 97, 43, 113, 50, 68, 13, 58, 25, 110, 15, 55, 50, 22, 40, 86, 34, 19, 76, 39, 37, 44, 38, 90, 36)
+        val expLoads = listOf<Int>(78, 55, 43, 27, 37, 75, 62, 27, 42, 109, 80, 89, 113, 31, 32, 66, 33, 18, 95, 92, 104, 34, 15, 16, 18, 39, 23, 37, 62, 97, 43, 113, 50, 68, 13, 58, 25, 110, 15, 55, 50, 22, 40, 86, 34, 19, 76, 39, 37, 44, 38, 90, 36)
         assertEquals(expLoads, sn.acts.map { sn.loadOf(it) })
         assertEquals(360, sn.loadDays(7))
         assertEquals(955, sn.loadDays(28))
@@ -169,7 +169,7 @@ class GoldenTest {
         // readiness
         assertEquals(27, sn.readiness())
         // detectType (8 aktivitas terakhir)
-        val expDetect = listOf(
+        val expDetect = listOf<List<String>>(
             listOf(1794038400000L.toString(), "easy", "sedang", "pace relatif merata / tidak ada pola keras", "false"),
             listOf(1794214800000L.toString(), "thr", "rendah", "intensitas di atas easy (≈ 78% Max)", "false"),
             listOf(1794297600000L.toString(), "easy", "rendah", "bukan lari", "false"),
@@ -184,7 +184,7 @@ class GoldenTest {
     }
 
     private fun scenario_B_tanpa_hr_tanpa_wellness_snap(): Snapshot {
-        val acts = listOf(
+        val acts = listOf<Act>(
             act(1791273600000L, "RUN", 18.74, 3.23, 0.0, 72.0, "hw1791273600000", "Lari 40", 0.0, 0.0),
             act(1791367200000L, "RUN", 11.0, 2.1, 0.0, 11.0, "hw1791367200000", "Lari 39", 0.0, 0.0),
             act(1791532800000L, "RUN", 20.89, 3.35, 0.0, 63.0, "hw1791532800000", "Lari 37", 0.0, 0.0),
@@ -209,7 +209,7 @@ class GoldenTest {
             act(1794556800000L, "RUN", 16.22, 2.31, 0.0, 9.0, "hw1794556800000", "Lari 2", 0.0, 0.0),
             act(1794729600000L, "OTHER", 23.13, 0.0, 0.0, 8.0, "hw1794729600000", "Lari 0", 0.0, 0.0),
         )
-        val wl = listOf(
+        val wl = listOf<Wellness>(
             Wellness("2026-11-11", restingHR = 52.0, rhrSrc = "jam", hrv = 65.0, hrvSrc = "jam", sleepSecs = 25388.0, stress = 32.0),
             Wellness("2026-11-12", restingHR = 52.0, rhrSrc = "jam", hrv = 66.0, hrvSrc = "jam", sleepSecs = 23220.0, stress = 37.0),
             Wellness("2026-11-13", restingHR = 54.0, rhrSrc = "jam", hrv = 62.0, hrvSrc = "jam", hrvSpot = true, sleepSecs = 27353.0, stress = 32.0),
@@ -239,7 +239,7 @@ class GoldenTest {
         assertEquals(false, g.unknown)
         assertEquals(4, g.afS)
         // load
-        val expLoads = listOf(23, 17, 21, 40, 20, 46, 16, 24, 18, 7, 30, 34, 19, 48, 31, 35, 39, 38, 41, 44, 38, 13, 19)
+        val expLoads = listOf<Int>(23, 17, 21, 40, 20, 46, 16, 24, 18, 7, 30, 34, 19, 48, 31, 35, 39, 38, 41, 44, 38, 13, 19)
         assertEquals(expLoads, sn.acts.map { sn.loadOf(it) })
         assertEquals(193, sn.loadDays(7))
         assertEquals(540, sn.loadDays(28))
@@ -262,7 +262,7 @@ class GoldenTest {
         // readiness
         assertEquals(50, sn.readiness())
         // detectType (8 aktivitas terakhir)
-        val expDetect = listOf(
+        val expDetect = listOf<List<String>>(
             listOf(1793952000000L.toString(), "thr", "rendah", "intensitas di atas easy (≈ 82% Max)", "false"),
             listOf(1794045600000L.toString(), "long", "sedang", "6.4 km, 36% lebih jauh dari biasamu", "false"),
             listOf(1794132000000L.toString(), "easy", "sedang", "pace relatif merata / tidak ada pola keras", "false"),
@@ -277,7 +277,7 @@ class GoldenTest {
     }
 
     private fun scenario_C_umur_saja_snap(): Snapshot {
-        val acts = listOf(
+        val acts = listOf<Act>(
             act(1789552800000L, "RUN", 12.56, 2.1, 169.0, 21.0, "hw1789552800000", "Lari 60", 181.0, 0.0),
             act(1789639200000L, "OTHER", 52.34, 0.0, 148.0, 66.0, "hw1789639200000", "Lari 59", 160.0, 0.0),
             act(1789722000000L, "RUN", 14.29, 2.76, 150.0, 67.0, "hw1789722000000", "Lari 58", 162.0, 0.0),
@@ -321,7 +321,7 @@ class GoldenTest {
             act(1794560400000L, "OTHER", 53.15, 0.0, 175.0, 46.0, "hw1794560400000", "Lari 2", 187.0, 0.0),
             act(1794643200000L, "RUN", 38.94, 7.73, 174.0, 41.0, "hw1794643200000", "Lari 1", 186.0, 0.0),
         )
-        val wl = listOf(
+        val wl = listOf<Wellness>(
             Wellness("2026-10-11", restingHR = 53.0, rhrSrc = "jam", hrv = 62.0, hrvSrc = "jam", sleepSecs = 26963.0, stress = 38.0),
             Wellness("2026-10-12", restingHR = 54.0, rhrSrc = "jam", hrv = 63.0, hrvSrc = "jam", sleepSecs = 23646.0, stress = 36.0),
             Wellness("2026-10-13", restingHR = 52.0, rhrSrc = "jam", hrv = 70.0, hrvSrc = "jam", sleepSecs = 23778.0, stress = 37.0),
@@ -382,7 +382,7 @@ class GoldenTest {
         assertEquals(false, g.unknown)
         assertEquals(4, g.afS)
         // load
-        val expLoads = listOf(23, 42, 18, 107, 53, 38, 44, 39, 92, 19, 74, 21, 14, 24, 41, 30, 11, 38, 18, 23, 34, 54, 54, 12, 47, 52, 91, 48, 58, 42, 48, 73, 70, 18, 62, 77, 26, 49, 46, 27, 43, 77)
+        val expLoads = listOf<Int>(23, 42, 18, 107, 53, 38, 44, 39, 92, 19, 74, 21, 14, 24, 41, 30, 11, 38, 18, 23, 34, 54, 54, 12, 47, 52, 91, 48, 58, 42, 48, 73, 70, 18, 62, 77, 26, 49, 46, 27, 43, 77)
         assertEquals(expLoads, sn.acts.map { sn.loadOf(it) })
         assertEquals(268, sn.loadDays(7))
         assertEquals(1020, sn.loadDays(28))
@@ -405,7 +405,7 @@ class GoldenTest {
         // readiness
         assertEquals(66, sn.readiness())
         // detectType (8 aktivitas terakhir)
-        val expDetect = listOf(
+        val expDetect = listOf<List<String>>(
             listOf(1793959200000L.toString(), "easy", "sedang", "pace relatif merata / tidak ada pola keras", "false"),
             listOf(1794045600000L.toString(), "easy", "sedang", "pace relatif merata / tidak ada pola keras", "false"),
             listOf(1794124800000L.toString(), "easy", "sedang", "pace relatif merata / tidak ada pola keras", "false"),
@@ -420,7 +420,7 @@ class GoldenTest {
     }
 
     private fun scenario_D_hrv_tak_berubah_snap(): Snapshot {
-        val acts = listOf(
+        val acts = listOf<Act>(
             act(1789545600000L, "RUN", 43.58, 6.81, 157.0, 30.0, "hw1789545600000", "Lari 60", 169.0, 0.0),
             act(1789639200000L, "RUN", 14.78, 2.07, 169.0, 1.0, "hw1789639200000", "Lari 59", 181.0, 0.0),
             act(1789722000000L, "RUN", 31.02, 5.09, 151.0, 7.0, "hw1789722000000", "Lari 58", 163.0, 0.0),
@@ -470,7 +470,7 @@ class GoldenTest {
             act(1794650400000L, "RUN", 12.69, 2.49, 141.0, 0.0, "hw1794650400000", "Lari 1", 153.0, 0.0),
             act(1794736800000L, "RUN", 45.59, 8.11, 162.0, 30.0, "hw1794736800000", "Lari 0", 174.0, 34.0),
         )
-        val wl = listOf(
+        val wl = listOf<Wellness>(
             Wellness("2026-10-11", sleepSecs = 25161.0, stress = 35.0),
             Wellness("2026-10-12", hrv = 67.0, hrvSrc = "jam", hrvSpot = true, sleepSecs = 24162.0, stress = 38.0),
             Wellness("2026-10-13", restingHR = 55.0, rhrSrc = "jam", hrv = 70.0, hrvSrc = "jam", sleepSecs = 25955.0, stress = 34.0),
@@ -531,7 +531,7 @@ class GoldenTest {
         assertEquals(false, g.unknown)
         assertEquals(4, g.afS)
         // load
-        val expLoads = listOf(55, 23, 35, 47, 34, 96, 47, 58, 62, 89, 28, 16, 19, 81, 67, 75, 50, 94, 116, 61, 22, 105, 28, 105, 41, 71, 15, 68, 53, 89, 38, 79, 38, 47, 43, 49, 37, 67, 60, 110, 38, 48, 25, 91, 27, 11, 12, 34)
+        val expLoads = listOf<Int>(55, 23, 35, 47, 34, 96, 47, 58, 62, 89, 28, 16, 19, 81, 67, 75, 50, 94, 116, 61, 22, 105, 28, 105, 41, 71, 15, 68, 53, 89, 38, 79, 38, 47, 43, 49, 37, 67, 60, 110, 38, 48, 25, 91, 27, 11, 12, 34)
         assertEquals(expLoads, sn.acts.map { sn.loadOf(it) })
         assertEquals(248, sn.loadDays(7))
         assertEquals(1079, sn.loadDays(28))
@@ -554,7 +554,7 @@ class GoldenTest {
         // readiness
         assertEquals(74, sn.readiness())
         // detectType (8 aktivitas terakhir)
-        val expDetect = listOf(
+        val expDetect = listOf<List<String>>(
             listOf(1794045600000L.toString(), "easy", "sedang", "pace relatif merata / tidak ada pola keras", "false"),
             listOf(1794124800000L.toString(), "thr", "rendah", "intensitas di atas easy (≈ 78% Max)", "false"),
             listOf(1794218400000L.toString(), "easy", "sedang", "pace relatif merata / tidak ada pola keras", "false"),
@@ -569,7 +569,7 @@ class GoldenTest {
     }
 
     private fun scenario_E_pemula_lambat_tahap1_snap(): Snapshot {
-        val acts = listOf(
+        val acts = listOf<Act>(
             act(1789552800000L, "RUN", 62.54, 6.49, 148.0, 40.0, "hw1789552800000", "Lari 60", 160.0, 0.0),
             act(1789718400000L, "RUN", 44.18, 4.31, 142.0, 52.0, "hw1789718400000", "Lari 58", 154.0, 0.0),
             act(1789804800000L, "RUN", 29.31, 2.99, 152.0, 68.0, "hw1789804800000", "Lari 57", 164.0, 0.0),
@@ -610,7 +610,7 @@ class GoldenTest {
             act(1794646800000L, "OTHER", 39.29, 0.0, 148.0, 22.0, "hw1794646800000", "Lari 1", 160.0, 0.0),
             act(1794733200000L, "RUN", 50.36, 5.05, 172.0, 65.0, "hw1794733200000", "Lari 0", 184.0, 0.0),
         )
-        val wl = listOf(
+        val wl = listOf<Wellness>(
             Wellness("2026-10-16", restingHR = 54.0, rhrSrc = "jam", hrv = 68.0, hrvSrc = "jam", sleepSecs = 25528.0, stress = 32.0),
             Wellness("2026-10-17", restingHR = 52.0, rhrSrc = "jam", hrv = 69.0, hrvSrc = "jam", sleepSecs = 27628.0),
             Wellness("2026-10-18", restingHR = 55.0, rhrSrc = "jam", hrv = 61.0, hrvSrc = "jam", sleepSecs = 25626.0, stress = 39.0),
@@ -666,7 +666,7 @@ class GoldenTest {
         assertEquals(false, g.unknown)
         assertEquals(2, g.afS)
         // load
-        val expLoads = listOf(64, 39, 33, 33, 39, 117, 55, 28, 48, 104, 72, 19, 104, 104, 70, 71, 24, 36, 79, 78, 8, 40, 14, 100, 15, 28, 50, 133, 72, 54, 90, 73, 92, 58, 34, 12, 60, 31, 86)
+        val expLoads = listOf<Int>(64, 39, 33, 33, 39, 117, 55, 28, 48, 104, 72, 19, 104, 104, 70, 71, 24, 36, 79, 78, 8, 40, 14, 100, 15, 28, 50, 133, 72, 54, 90, 73, 92, 58, 34, 12, 60, 31, 86)
         assertEquals(expLoads, sn.acts.map { sn.loadOf(it) })
         assertEquals(281, sn.loadDays(7))
         assertEquals(1128, sn.loadDays(28))
@@ -689,7 +689,7 @@ class GoldenTest {
         // readiness
         assertEquals(76, sn.readiness())
         // detectType (8 aktivitas terakhir)
-        val expDetect = listOf(
+        val expDetect = listOf<List<String>>(
             listOf(1793952000000L.toString(), "long", "sedang", "7.5 km, 81% lebih jauh dari biasamu", "false"),
             listOf(1794042000000L.toString(), "thr", "rendah", "training load tinggi (92)", "false"),
             listOf(1794132000000L.toString(), "long", "tinggi", "dikonfirmasi manual", "true"),
@@ -704,7 +704,7 @@ class GoldenTest {
     }
 
     private fun scenario_F_histeresis_naik_tertahan_snap(): Snapshot {
-        val acts = listOf(
+        val acts = listOf<Act>(
             act(1789808400000L, "WALK", 42.07, 1.14, 149.0, 0.0, "hw1789808400000", "Lari 57", 161.0, 0.0),
             act(1789981200000L, "RUN", 75.96, 7.13, 153.0, 52.0, "hw1789981200000", "Lari 55", 165.0, 0.0),
             act(1790064000000L, "RUN", 64.42, 6.31, 146.0, 15.0, "hw1790064000000", "Lari 54", 158.0, 0.0),
@@ -742,7 +742,7 @@ class GoldenTest {
             act(1794643200000L, "RUN", 21.67, 2.27, 146.0, 44.0, "hw1794643200000", "Lari 1", 158.0, 0.0),
             act(1794733200000L, "RUN", 100.66, 11.01, 167.0, 3.0, "hw1794733200000", "Lari 0", 179.0, 0.0),
         )
-        val wl = listOf(
+        val wl = listOf<Wellness>(
             Wellness("2026-10-16", restingHR = 54.0, rhrSrc = "jam", hrv = 61.0, hrvSrc = "jam", hrvSpot = true, sleepSecs = 23877.0, stress = 35.0),
             Wellness("2026-10-17", restingHR = 54.0, rhrSrc = "jam", hrv = 65.0, hrvSrc = "jam", sleepSecs = 23970.0),
             Wellness("2026-10-18", restingHR = 54.0, rhrSrc = "jam", hrv = 64.0, hrvSrc = "jam", sleepSecs = 22661.0),
@@ -798,7 +798,7 @@ class GoldenTest {
         assertEquals(false, g.unknown)
         assertEquals(2, g.afS)
         // load
-        val expLoads = listOf(15, 89, 65, 53, 137, 67, 65, 81, 48, 36, 57, 26, 67, 67, 53, 64, 25, 39, 23, 29, 42, 60, 58, 18, 51, 36, 43, 62, 23, 40, 12, 104, 20, 135, 22, 158)
+        val expLoads = listOf<Int>(15, 89, 65, 53, 137, 67, 65, 81, 48, 36, 57, 26, 67, 67, 53, 64, 25, 39, 23, 29, 42, 60, 58, 18, 51, 36, 43, 62, 23, 40, 12, 104, 20, 135, 22, 158)
         assertEquals(expLoads, sn.acts.map { sn.loadOf(it) })
         assertEquals(491, sn.loadDays(7))
         assertEquals(1064, sn.loadDays(28))
@@ -821,7 +821,7 @@ class GoldenTest {
         // readiness
         assertEquals(51, sn.readiness())
         // detectType (8 aktivitas terakhir)
-        val expDetect = listOf(
+        val expDetect = listOf<List<String>>(
             listOf(1794042000000L.toString(), "easy", "sedang", "pace relatif merata / tidak ada pola keras", "false"),
             listOf(1794132000000L.toString(), "easy", "rendah", "bukan lari", "false"),
             listOf(1794301200000L.toString(), "easy", "rendah", "bukan lari", "false"),
@@ -836,7 +836,7 @@ class GoldenTest {
     }
 
     private fun scenario_I_histeresis_turun_tertahan_snap(): Snapshot {
-        val acts = listOf(
+        val acts = listOf<Act>(
             act(1789808400000L, "WALK", 42.07, 1.14, 149.0, 0.0, "hw1789808400000", "Lari 57", 161.0, 0.0),
             act(1789981200000L, "RUN", 76.67, 7.13, 153.0, 52.0, "hw1789981200000", "Lari 55", 165.0, 0.0),
             act(1790064000000L, "RUN", 65.06, 6.31, 146.0, 15.0, "hw1790064000000", "Lari 54", 158.0, 0.0),
@@ -874,7 +874,7 @@ class GoldenTest {
             act(1794643200000L, "RUN", 21.9, 2.27, 146.0, 44.0, "hw1794643200000", "Lari 1", 158.0, 0.0),
             act(1794733200000L, "RUN", 101.76, 11.01, 167.0, 3.0, "hw1794733200000", "Lari 0", 179.0, 0.0),
         )
-        val wl = listOf(
+        val wl = listOf<Wellness>(
             Wellness("2026-10-16", restingHR = 54.0, rhrSrc = "jam", hrv = 61.0, hrvSrc = "jam", hrvSpot = true, sleepSecs = 23877.0, stress = 35.0),
             Wellness("2026-10-17", restingHR = 54.0, rhrSrc = "jam", hrv = 65.0, hrvSrc = "jam", sleepSecs = 23970.0),
             Wellness("2026-10-18", restingHR = 54.0, rhrSrc = "jam", hrv = 64.0, hrvSrc = "jam", sleepSecs = 22661.0),
@@ -930,7 +930,7 @@ class GoldenTest {
         assertEquals(false, g.unknown)
         assertEquals(3, g.afS)
         // load
-        val expLoads = listOf(15, 90, 65, 54, 139, 67, 65, 82, 48, 37, 57, 27, 68, 67, 54, 65, 25, 40, 24, 29, 42, 61, 58, 18, 51, 36, 44, 62, 23, 40, 12, 105, 20, 136, 22, 160)
+        val expLoads = listOf<Int>(15, 90, 65, 54, 139, 67, 65, 82, 48, 37, 57, 27, 68, 67, 54, 65, 25, 40, 24, 29, 42, 61, 58, 18, 51, 36, 44, 62, 23, 40, 12, 105, 20, 136, 22, 160)
         assertEquals(expLoads, sn.acts.map { sn.loadOf(it) })
         assertEquals(495, sn.loadDays(7))
         assertEquals(1073, sn.loadDays(28))
@@ -953,7 +953,7 @@ class GoldenTest {
         // readiness
         assertEquals(51, sn.readiness())
         // detectType (8 aktivitas terakhir)
-        val expDetect = listOf(
+        val expDetect = listOf<List<String>>(
             listOf(1794042000000L.toString(), "easy", "sedang", "pace relatif merata / tidak ada pola keras", "false"),
             listOf(1794132000000L.toString(), "easy", "rendah", "bukan lari", "false"),
             listOf(1794301200000L.toString(), "easy", "rendah", "bukan lari", "false"),
@@ -968,7 +968,7 @@ class GoldenTest {
     }
 
     private fun scenario_G_menengah_tahap3_snap(): Snapshot {
-        val acts = listOf(
+        val acts = listOf<Act>(
             act(1789545600000L, "RUN", 32.25, 4.92, 169.0, 71.0, "hw1789545600000", "Lari 60", 181.0, 0.0),
             act(1789632000000L, "RUN", 56.58, 7.46, 157.0, 55.0, "hw1789632000000", "Lari 59", 169.0, 0.0),
             act(1789718400000L, "RUN", 17.68, 2.45, 158.0, 78.0, "hw1789718400000", "Lari 58", 170.0, 0.0),
@@ -1009,7 +1009,7 @@ class GoldenTest {
             act(1794650400000L, "RUN", 31.4, 4.57, 145.0, 49.0, "hw1794650400000", "Lari 1", 157.0, 0.0),
             act(1794729600000L, "RUN", 32.17, 4.34, 149.0, 74.0, "hw1794729600000", "Lari 0", 161.0, 0.0),
         )
-        val wl = listOf(
+        val wl = listOf<Wellness>(
             Wellness("2026-10-16", restingHR = 54.0, rhrSrc = "jam", hrv = 68.0, hrvSrc = "jam", sleepSecs = 23504.0),
             Wellness("2026-10-17", restingHR = 54.0, rhrSrc = "jam", hrv = 63.0, hrvSrc = "jam", sleepSecs = 27757.0),
             Wellness("2026-10-18", restingHR = 53.0, rhrSrc = "jam", hrv = 63.0, hrvSrc = "jam", sleepSecs = 25688.0, stress = 31.0),
@@ -1065,7 +1065,7 @@ class GoldenTest {
         assertEquals(false, g.unknown)
         assertEquals(3, g.afS)
         // load
-        val expLoads = listOf(53, 73, 23, 43, 39, 45, 59, 36, 14, 30, 49, 46, 16, 16, 90, 15, 26, 61, 16, 140, 44, 83, 36, 62, 19, 74, 18, 66, 16, 77, 22, 67, 12, 39, 89, 33, 15, 31, 35)
+        val expLoads = listOf<Int>(53, 73, 23, 43, 39, 45, 59, 36, 14, 30, 49, 46, 16, 16, 90, 15, 26, 61, 16, 140, 44, 83, 36, 62, 19, 74, 18, 66, 16, 77, 22, 67, 12, 39, 89, 33, 15, 31, 35)
         assertEquals(expLoads, sn.acts.map { sn.loadOf(it) })
         assertEquals(242, sn.loadDays(7))
         assertEquals(978, sn.loadDays(28))
@@ -1088,7 +1088,7 @@ class GoldenTest {
         // readiness
         assertEquals(73, sn.readiness())
         // detectType (8 aktivitas terakhir)
-        val expDetect = listOf(
+        val expDetect = listOf<List<String>>(
             listOf(1793865600000L.toString(), "easy", "sedang", "pace relatif merata / tidak ada pola keras", "false"),
             listOf(1793952000000L.toString(), "easy", "rendah", "bukan lari", "false"),
             listOf(1794128400000L.toString(), "easy", "sedang", "pace relatif merata / tidak ada pola keras", "false"),
@@ -1103,10 +1103,10 @@ class GoldenTest {
     }
 
     private fun scenario_H_kosong_snap(): Snapshot {
-        val acts = listOf(
+        val acts = listOf<Act>(
 
         )
-        val wl = listOf(
+        val wl = listOf<Wellness>(
             Wellness("2026-11-15", restingHR = 53.0, rhrSrc = "jam", hrv = 64.0, hrvSrc = "jam", sleepSecs = 22980.0),
         )
         val vx = mapOf<Long, String>()
@@ -1132,7 +1132,7 @@ class GoldenTest {
         assertEquals(true, g.unknown)
         assertEquals(0, g.afS)
         // load
-        val expLoads = listOf()
+        val expLoads = listOf<Int>()
         assertEquals(expLoads, sn.acts.map { sn.loadOf(it) })
         assertEquals(0, sn.loadDays(7))
         assertEquals(0, sn.loadDays(28))
@@ -1155,7 +1155,7 @@ class GoldenTest {
         // readiness
         assertEquals(67, sn.readiness())
         // detectType (8 aktivitas terakhir)
-        val expDetect = listOf(
+        val expDetect = listOf<List<String>>(
 
         )
         val gotDetect = sn.acts.takeLast(8).map { a -> val t = sn.detectType(a, g); listOf(a.start.toString(), t.type, t.conf, t.why, t.confirmed.toString()) }
