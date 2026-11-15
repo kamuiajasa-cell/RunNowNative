@@ -74,6 +74,8 @@ data class Snapshot(
     val nowMs: Long = System.currentTimeMillis(),
     val zone: ZoneId = ZoneId.systemDefault(),
     val settings: Settings = Settings(),
+    /** state.sx: ringkasan stream per id aktivitas (icuId), dipakai reviewRun (Langkah 4). */
+    val streams: Map<String, StreamSummary> = emptyMap(),
 ) {
     /** d0() di HTML: tengah malam tanggal lokal, dinyatakan sebagai epoch ms UTC. */
     fun d0(ms: Long): Long =

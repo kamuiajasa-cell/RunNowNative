@@ -73,6 +73,12 @@ internal fun Snapshot.dateShortId(ms: Long): String {
     return "${ID_DAYS[d.dayOfWeek.value - 1]}, ${d.dayOfMonth} ${ID_MONTHS[d.monthValue - 1]}"
 }
 
+/** toLocaleDateString("id-ID", {day:"numeric", month:"short"}) -> "15 Nov". */
+internal fun Snapshot.dateDayMonthId(ms: Long): String {
+    val d = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
+    return "${d.dayOfMonth} ${ID_MONTHS[d.monthValue - 1]}"
+}
+
 /** hhmm() di HTML: toLocaleTimeString("id-ID", {hour:"2-digit", minute:"2-digit"}) -> "08.05". */
 internal fun Snapshot.hhmm(ms: Long): String {
     val t = Instant.ofEpochMilli(ms).atZone(zone)
@@ -307,3 +313,12 @@ fun Snapshot.syncLine(sync: SyncInfo): String {
     if (sync.hwLast != 0L) p += "Jam " + hhmm(sync.hwLast)
     return if (p.isNotEmpty()) "Sinkron · " + p.joinToString(" · ") else "Belum sinkron"
 }
+
+/**
+ * Snapshot setelah processData: RHR otomatis dan afS baru ikut masuk, begitu juga LTHR dan LTPace hasil hitung
+ * (yang di HTML dibaca reviewRun dari state.athlete). Pakai ini sebelum memanggil reviewRun atau runBacktest.
+ */
+fun Snapshot.withProcessed(r: ProcessResult): Snapshot = copy(
+    profile = r.profile,
+    settings = settings.copy(athlete = AthleteSettings(lthr = r.athlete.lthr ?: 0, ltPace = r.athlete.ltPace ?: "")),
+)
