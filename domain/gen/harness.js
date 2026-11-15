@@ -1,7 +1,8 @@
 // Menjalankan kode ASLI dari runsense.html (baris 797-1130) dengan state buatan, untuk membuat nilai acuan test Kotlin.
 const fs = require("fs");
 const lines = fs.readFileSync(process.env.RUNSENSE_HTML || "runsense.html", "utf8").split("\n");
-const code = lines.slice(796, 1130).join("\n");
+const OFF = lines.findIndex((l) => l.startsWith("  const clamp = (v, a, b)")) + 1 - 797; // geser otomatis bila nomor baris runsense.html berubah
+const code = lines.slice(796 + OFF, 1130 + OFF).join("\n");
 const NOW = Date.UTC(2026, 10, 15, 8, 0, 0);
 const realNow = Date.now; Date.now = () => NOW;
 

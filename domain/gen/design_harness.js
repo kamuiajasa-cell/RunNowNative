@@ -2,7 +2,9 @@
 process.env.TZ = "UTC";
 const fs = require("fs");
 const lines = fs.readFileSync(process.env.RUNSENSE_HTML || "runsense.html", "utf8").split("\n");
-const slice = (a, b) => lines.slice(a - 1, b).join("\n"); // 1-based inklusif
+// Nomor baris di bawah mengacu ke runsense.html Langkah 2 (clamp di baris 797); otomatis digeser bila file berubah.
+const OFF = lines.findIndex((l) => l.startsWith("  const clamp = (v, a, b)")) + 1 - 797;
+const slice = (a, b) => lines.slice(a + OFF - 1, b + OFF).join("\n"); // 1-based inklusif
 
 const code =
   slice(797, 1130) + "\n" +
@@ -88,4 +90,4 @@ function runCase(ds, cs) {
   const r = E.designToday();
   return r;
 }
-module.exports = { buildDataset, runCase, DAY, BASE_NOW, mulberry32 };
+module.exports = { buildDataset, runCase, DAY, BASE_NOW, mulberry32, setNow: (t) => { NOW = t; } };
