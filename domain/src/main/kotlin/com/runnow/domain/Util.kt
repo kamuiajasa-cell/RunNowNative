@@ -71,3 +71,25 @@ fun band(m: Double?): String? = when {
     m < 10.9 -> "Menengah"
     else -> "Tinggi"
 }
+
+/** parseInt JS: angka di awal teks (spasi dan tanda boleh), null bila tidak ada (NaN). */
+internal fun parseIntJs(s: String): Int? =
+    Regex("^\\s*[+-]?\\d+").find(s)?.value?.trim()?.toIntOrNull()
+
+/** Number(...) JS untuk teks: kosong = 0, tidak valid = NaN. */
+internal fun jsNumber(s: String): Double {
+    val t = s.trim()
+    return if (t.isEmpty()) 0.0 else t.toDoubleOrNull() ?: Double.NaN
+}
+
+/** Angka seperti dicetak JS: 18.0 jadi "18". */
+internal fun numStr(d: Double): String =
+    if (d == Math.floor(d) && Math.abs(d) < 1e15) d.toLong().toString() else d.toString()
+
+/** (x).toFixed(0) JS: setengah dibulatkan menjauhi nol, dan tanda minus tetap ada untuk x < 0. */
+internal fun toFixed0(x: Double): String {
+    val r = java.math.BigDecimal(Math.abs(x)).setScale(0, java.math.RoundingMode.HALF_UP).toPlainString()
+    return if (x < 0) "-$r" else r
+}
+
+internal val VX_LB = mapOf("easy" to "Easy", "long" to "Long", "thr" to "Threshold", "vo2" to "VO2max", "race" to "Lomba")

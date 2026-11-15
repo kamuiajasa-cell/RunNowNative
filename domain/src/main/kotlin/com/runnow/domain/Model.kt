@@ -40,6 +40,10 @@ data class Wellness(
     val stress: Double = 0.0,
     val stressMax: Double = 0.0,
     val stressNight: Double = 0.0,
+    /** Dari Intervals.icu; null bila tidak ada. */
+    val ctl: Double? = null,
+    val atl: Double? = null,
+    val tsb: Double? = null,
 )
 
 /** Profil pelari. state.rest / state.max / state.age / state.afS di HTML. */
@@ -63,6 +67,7 @@ data class Snapshot(
     val manualTypes: Map<Long, String> = emptyMap(),
     val nowMs: Long = System.currentTimeMillis(),
     val zone: ZoneId = ZoneId.systemDefault(),
+    val settings: Settings = Settings(),
 ) {
     /** d0() di HTML: tengah malam tanggal lokal, dinyatakan sebagai epoch ms UTC. */
     fun d0(ms: Long): Long =
@@ -118,4 +123,60 @@ data class WalkRunWorkout(
     val tot: Int,
     /** Pasangan (nama langkah, keterangan). */
     val steps: List<Pair<String, String>>,
+)
+
+// ---------- Pengaturan dan rencana (Langkah 2) ----------
+
+/** Satu hari rencana minggu. [t] = "auto" | "easy" | "quality" | "long" | "rest". */
+data class PlanDay(val t: String, val km: Double = 0.0)
+
+/** Mode run-walk. [run] dan [walk] dalam detik per interval (default 3:45 lari, 0:30 jalan). */
+data class RunWalkSettings(val on: Boolean = false, val run: Int = 225, val walk: Int = 30)
+
+/** Flag kaki: lv 1 = was-was (7 hari), lv 2 = sakit (14 hari). [since] = epoch ms saat ditandai. */
+data class LegFlag(val lv: Int, val since: Long)
+
+data class AthleteSettings(val lthr: Int = 0, val ltPace: String = "")
+
+data class Settings(
+    /** "conservative" | "moderate" | "aggressive". */
+    val style: String = "moderate",
+    /** Kunci = hari dalam minggu, 0 = Minggu .. 6 = Sabtu. */
+    val plan: Map<Int, PlanDay> = emptyMap(),
+    /** Tanggal race "yyyy-MM-dd" atau "". */
+    val race: String = "",
+    val raceDist: Double = 0.0,
+    /** Target waktu "h:mm:ss" atau "mm:ss" atau "". */
+    val raceGoal: String = "",
+    val rw: RunWalkSettings = RunWalkSettings(),
+    /** Tanggal "yyyy-MM-dd" bila hari ini ditandai panas, selain itu "". */
+    val heat: String = "",
+    val flag: LegFlag? = null,
+    val athlete: AthleteSettings = AthleteSettings(),
+)
+
+data class RacePhase(val days: Int, val k: String)
+
+data class FlagInfo(val lv: Int, val dayN: Int)
+
+data class EasyRange(val lo: Double, val hi: Double, val src: String, val base: Double?)
+
+/** Saran latihan hari ini. */
+data class Recommendation(
+    /** "ok" | "wn" | "bad". */
+    val k: String,
+    /** "train" | "rest" | "done". */
+    val status: String,
+    val title: String,
+    val duration: String,
+    val hr: String,
+    val pace: String,
+    val reason: String,
+    /** Pasangan (nama, keterangan). */
+    val steps: List<Pair<String, String>>,
+    val score: Int,
+    val stage: Int? = null,
+    val tag: String,
+    /** Baris workout untuk dikirim ke jam (hanya sesi quality). */
+    val wl: List<String>? = null,
 )
