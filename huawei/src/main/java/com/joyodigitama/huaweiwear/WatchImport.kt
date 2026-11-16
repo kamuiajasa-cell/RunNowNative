@@ -138,10 +138,13 @@ internal object WatchImport {
     }
     efficiency.forEach { (k, v) -> if (v.second > 0) row(k).put("sleepEfficiency", round(v.first.toDouble() / v.second, 1)) }
     best.forEach { (k, v) -> row(k).put("sleepScore", v.second) }
-    // HRV: rata-rata RMSSD per hari bangun; utamakan hasil malam.
-    val all = d.hrv(days)
-    val pool = all.filter { it.source == "night" }.ifEmpty { all }
-    pool.groupBy { dateOf(it.endSec) }.forEach { (k, v) -> row(k).put("hrv", round(v.map { it.rmssd }.average(), 1)) }
+    // HRV: utamakan sampel malam per hari; gunakan spot hanya pada hari tanpa sampel malam.
+    d.hrv(days).groupBy { dateOf(it.endSec) }.forEach { (k, values) ->
+      val daily = values.filter { it.source == "night" }.ifEmpty { values }
+      row(k).put("hrv", round(daily.map { it.rmssd }.average(), 1))
+      val sdnn = daily.mapNotNull { it.sdnn }
+      if (sdnn.isNotEmpty()) row(k).put("hrvSdnn", round(sdnn.average(), 1))
+    }
     val out = JSONArray()
     rows.values.forEach { out.put(it) }
     return out
