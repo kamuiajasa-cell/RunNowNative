@@ -151,7 +151,13 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
     scope.launch(Dispatchers.IO) {
       try {
         val r = WatchImport.build(app) ?: return@launch
-        if (r.wellnessDays == 0 && r.acts == 0 && r.workouts == 0) return@launch
+        val metrics = r.json.optJSONArray("healthMetrics")
+        val metricSamples = (0 until (metrics?.length() ?: 0)).sumOf { i ->
+          metrics?.optJSONObject(i)?.optJSONArray("points")?.length() ?: 0
+        }
+        val hrvReadings = r.json.optJSONArray("hrvReadings")?.length() ?: 0
+        // Jangan buang payload yang hanya berisi metrik kesehatan atau pengukuran HRV.
+        if (r.wellnessDays == 0 && r.acts == 0 && r.workouts == 0 && metricSamples == 0 && hrvReadings == 0) return@launch
         // Pemisah baris Unicode sah di JSON tetapi memutus literal JavaScript.
         val js = r.json.toString().replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
         host.eval("window.nativeImport&&window.nativeImport($js);")
