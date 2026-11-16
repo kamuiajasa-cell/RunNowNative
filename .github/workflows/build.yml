@@ -1,7 +1,7 @@
 name: Build APK
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, feature/complete-watch-data-export]
   workflow_dispatch:
 permissions:
   contents: read
