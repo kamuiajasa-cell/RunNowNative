@@ -19,6 +19,8 @@ internal object WatchImport {
   private const val MAX_WORKOUTS = 20
   private const val WITH_POINTS = 15
   private const val MAX_POINTS = 300
+  private const val MAX_METRIC_POINTS = 120
+  private const val MAX_HRV_READINGS = 300
   private val NULL: Any = JSONObject.NULL
 
   class Result(val json: JSONObject, val wellnessDays: Int, val acts: Int, val workouts: Int, val withRoute: Int)
@@ -92,6 +94,7 @@ internal object WatchImport {
       workouts.put(o)
     }
     val json = JSONObject().put("wellness", wellness).put("acts", acts).put("workouts", workouts)
+      .put("healthMetrics", healthMetrics(d, days)).put("hrvReadings", hrvReadings(d, days))
     return Result(json, wellness.length(), acts.length(), workouts.length(), withRoute)
   }
 
@@ -101,20 +104,38 @@ internal object WatchImport {
     for (day in d.days(days)) {
       if (day.date.isEmpty()) continue
       day.restingHr?.let { row(day.date).put("restingHR", it) }
+      day.avgHr?.let { row(day.date).put("avgHR", it) }
+      day.minHr?.let { row(day.date).put("minHR", it) }
+      day.maxHr?.let { row(day.date).put("maxHR", it) }
       if (day.steps > 0) row(day.date).put("steps", day.steps)
+      if (day.calories > 0) row(day.date).put("calories", day.calories)
+      if (day.distanceM > 0) row(day.date).put("distanceM", day.distanceM)
       day.spo2Avg?.let { row(day.date).put("spO2", it) }
     }
     // Tidur: tanggal = hari bangun; potongan di hari yang sama dijumlahkan (sama dengan WatchBridge di PolarRun).
     val sleep = HashMap<String, Long>()
+    val stages = HashMap<String, LongArray>()
+    val efficiency = HashMap<String, Pair<Long, Long>>()
     val best = HashMap<String, Pair<Long, Int>>()
     for (n in d.sleepNights(days)) {
       if (n.asleepSec <= 0) continue
       val k = dateOf(n.endSec)
       sleep[k] = (sleep[k] ?: 0L) + n.asleepSec
+      val stage = stages.getOrPut(k) { LongArray(4) }
+      stage[0] += n.deepSec; stage[1] += n.lightSec; stage[2] += n.remSec; stage[3] += n.awakeSec
+      n.efficiency?.let { value ->
+        val old = efficiency[k] ?: (0L to 0L)
+        efficiency[k] = (old.first + value.toLong() * n.asleepSec) to (old.second + n.asleepSec)
+      }
       val sc = n.score
       if (sc != null && n.asleepSec > (best[k]?.first ?: 0L)) best[k] = Pair(n.asleepSec, sc)
     }
     sleep.forEach { (k, v) -> row(k).put("sleepSecs", v) }
+    stages.forEach { (k, v) ->
+      row(k).put("sleepDeepSecs", v[0]).put("sleepLightSecs", v[1])
+        .put("sleepRemSecs", v[2]).put("sleepAwakeSecs", v[3])
+    }
+    efficiency.forEach { (k, v) -> if (v.second > 0) row(k).put("sleepEfficiency", round(v.first.toDouble() / v.second, 1)) }
     best.forEach { (k, v) -> row(k).put("sleepScore", v.second) }
     // HRV: rata-rata RMSSD per hari bangun; utamakan hasil malam.
     val all = d.hrv(days)
@@ -122,6 +143,52 @@ internal object WatchImport {
     pool.groupBy { dateOf(it.endSec) }.forEach { (k, v) -> row(k).put("hrv", round(v.map { it.rmssd }.average(), 1)) }
     val out = JSONArray()
     rows.values.forEach { out.put(it) }
+    return out
+  }
+
+
+  /** Semua tipe metrik kesehatan yang diketahui database; nilai mentah disertakan agar UI dapat berkembang tanpa kehilangan field. */
+  private fun healthMetrics(d: WatchData, days: Int): JSONArray {
+    val out = JSONArray()
+    for (status in d.metricStatus()) {
+      val points = JSONArray()
+      d.metric(status.type, days).takeLast(MAX_METRIC_POINTS).forEach { point ->
+        val item = JSONObject().put("ts", point.tsSec * 1000L)
+        point.value?.let { item.put("value", it) }
+        try {
+          val values = JSONObject(point.valuesJson)
+          if (values.length() > 0) item.put("values", values)
+        } catch (_: Exception) {
+          // Simpan nilai numerik meski payload tambahan tidak valid.
+        }
+        points.put(item)
+      }
+      val metric = JSONObject()
+        .put("type", status.type)
+        .put("title", status.title)
+        .put("supported", status.supported)
+        .put("rows", status.rows)
+        .put("points", points)
+      status.syncedAtSec?.let { metric.put("syncedAt", it * 1000L) }
+      status.note?.let { metric.put("note", it) }
+      out.put(metric)
+    }
+    return out
+  }
+
+  /** Pengukuran HRV per sesi, selain ringkasan RMSSD harian yang dipakai Readiness. */
+  private fun hrvReadings(d: WatchData, days: Int): JSONArray {
+    val out = JSONArray()
+    d.hrv(days).take(MAX_HRV_READINGS).forEach { h ->
+      val item = JSONObject()
+        .put("start", h.startSec * 1000L)
+        .put("end", h.endSec * 1000L)
+        .put("source", h.source)
+        .put("rmssd", h.rmssd)
+        .put("beats", h.beats)
+      h.sdnn?.let { item.put("sdnn", it) }
+      out.put(item)
+    }
     return out
   }
 
