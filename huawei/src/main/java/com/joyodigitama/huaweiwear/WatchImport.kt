@@ -8,15 +8,16 @@ import org.json.JSONObject
 
 /**
  * Mengubah database jam (hasil sinkron, dibaca lewat [WatchData]) menjadi isi untuk `window.nativeImport` di index.html:
- * `{ wellness: [...], acts: [...], workouts: [...] }`. Bentuknya mengikuti yang dibaca index.html:
- *  - wellness: `{id: "yyyy-MM-dd", restingHR, hrv, sleepSecs (detik), sleepScore, steps, spO2}`; bidang kosong tidak dikirim,
- *    jadi tidak menimpa nilai dari sumber lain (mis. Intervals.icu).
- *  - acts: baris jurnal `[mulaiMs, jenis, menit, km, hrRata, hrMaks, null, kadens, beban, id]` (sama dengan icuActivity di index.html).
- *  - workouts: latihan rinci dengan `pts` = `[detikSejakMulai, hr, kecepatan m/s, tinggi, kadens, lat, lon]` (sama dengan icuWk).
+ * `{ wellness, acts, workouts, healthMetrics, hrvReadings }` untuk penerima `window.nativeImport` di index.html.
+ *  - wellness: ringkasan harian hingga 365 hari (HR, tidur dan tahap tidur, langkah, kalori, jarak, SpO2, HRV).
+ *  - acts: ringkasan hingga 500 aktivitas, dengan ID stabil untuk deduplikasi lintas sinkron.
+ *  - workouts: maksimal 500 sesi; 15 sesi terbaru membawa hingga 300 titik HR/pace/GPS/kadens/elevasi.
+ *  - healthMetrics: status semua tipe metrik dan maksimal 120 sampel per tipe, termasuk values_json asli.
+ *  - hrvReadings: maksimal 300 pengukuran HRV individual, selain ringkasan harian.
  * Blocking: panggil dari thread IO.
  */
 internal object WatchImport {
-  private const val MAX_WORKOUTS = 20
+  private const val MAX_WORKOUTS = 500
   private const val WITH_POINTS = 15
   private const val MAX_POINTS = 300
   private const val MAX_METRIC_POINTS = 120
@@ -46,7 +47,7 @@ internal object WatchImport {
   }
 
   /** Null bila belum ada database jam. */
-  fun build(context: Context, days: Int = 42): Result? {
+  fun build(context: Context, days: Int = 365): Result? {
     val d = WatchData(context.applicationContext)
     if (!d.available()) return null
     val wellness = wellness(d, days)
