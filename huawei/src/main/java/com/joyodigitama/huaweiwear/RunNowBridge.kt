@@ -266,12 +266,19 @@ class RunNowBridge(context: Context, private val host: RunNowHost) {
     t.m("getWatchImportSummary") {
       withContext(Dispatchers.IO) {
         val r = WatchImport.build(app)
+        val metrics = r?.json?.optJSONArray("healthMetrics")
+        val metricTypes = metrics?.length() ?: 0
+        val metricSamples = (0 until metricTypes).sumOf { metrics?.optJSONObject(it)?.optJSONArray("points")?.length() ?: 0 }
+        val hrvReadings = r?.json?.optJSONArray("hrvReadings")?.length() ?: 0
         mapOf(
           "available" to (r != null),
           "wellnessDays" to (r?.wellnessDays ?: 0),
           "acts" to (r?.acts ?: 0),
           "workouts" to (r?.workouts ?: 0),
           "withRoute" to (r?.withRoute ?: 0),
+          "healthMetricTypes" to metricTypes,
+          "healthMetricSamples" to metricSamples,
+          "hrvReadings" to hrvReadings,
         )
       }
     }
