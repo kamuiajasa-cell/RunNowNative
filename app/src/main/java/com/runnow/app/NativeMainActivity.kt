@@ -66,6 +66,8 @@ private data class NativeState(
     val goal: String,
     val intervalsConnected: Boolean,
     val climateContexts: Map<Long, ClimateContext>,
+    val climateProfile: PersonalClimateProfile,
+    val climateAdvice: Map<Long, ClimateAdvice>,
 )
 
 private class NativeDataSource(private val activity: android.content.Context) {
@@ -102,6 +104,12 @@ private class NativeDataSource(private val activity: android.content.Context) {
             }, limit = 1)
         }
         val climateContexts = climateRepository.contexts()
+        val climateProfile = data.snapshot.personalClimateProfile(climateContexts)
+        val climateAdvice = data.snapshot.acts.mapNotNull { act ->
+            val context = climateContexts[act.start] ?: return@mapNotNull null
+            val tag = data.snapshot.detectType(act).type.uppercase()
+            act.start to climateAdvice(context.conditions, climateProfile, tag, false)
+        }.toMap()
         var snap = data.snapshot.copy(settings = Settings(goal = goal))
         val acts = snap.acts
         val wellness = snap.wellness
@@ -111,7 +119,7 @@ private class NativeDataSource(private val activity: android.content.Context) {
         NativeState(
             overview, workouts, acts, days, sleep, hrv, process, reviews,
             data.watchAvailable, data.watchError, age, restingHr, maxHr, goal,
-            intervalsKey != null, climateContexts,
+            intervalsKey != null, climateContexts, climateProfile, climateAdvice,
         )
     }
 
@@ -276,6 +284,11 @@ private fun HistoryScreen(s: NativeState?) {
                     Text("KONTEKS CUACA SAAT LARI", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Text("${c.temperatureC?.let { "${it.toInt()}°C" } ?: "—"} · terasa ${c.apparentTemperatureC?.let { "${it.toInt()}°C" } ?: "—"} · lembap ${c.humidityPct?.let { "${it.toInt()}%" } ?: "—"}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     Text(if (ctx.matchedWithGps) "Dicocokkan dari ${ctx.gpsPointCount} titik GPS · ${ctx.source}" else "Perkiraan lokasi tersimpan · keyakinan lebih rendah", color = Muted, fontSize = 11.sp)
+                    s?.climateAdvice?.get(act.start)?.let { advice ->
+                        Text(advice.message, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        advice.personalComparison?.let { Text(it, color = Muted, fontSize = 11.sp) }
+                        advice.stopWarning?.let { Text(it, color = Color(0xFFB3261E), fontSize = 11.sp) }
+                    }
                 }
             }
         }
