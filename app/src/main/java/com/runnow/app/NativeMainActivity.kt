@@ -157,7 +157,7 @@ private class NativeDataSource(private val activity: android.content.Context) {
         val reviews = acts.filter { it.kind == ActKind.RUN }.associate { it.start to snap.reviewRun(it) }
         NativeState(
             overview, workouts, acts, days, sleep, hrv, process, reviews,
-            (data.watchAvailable || data.snapshot.acts.isNotEmpty()), data.watchError, age, restingHr, maxHr, goal, snap.settings,
+            data.watchAvailable, data.watchError, age, restingHr, maxHr, goal, snap.settings,
             intervalsKey != null, climateContexts, climateProfile, climateRepository.savedLocation(), climateAdviceByStart, climateComparisons,
         )
     }
@@ -1052,7 +1052,7 @@ private fun ProfileScreen(
 private fun DataStatus(s: NativeState?) {
     SurfaceCard {
         Text("STATUS DATA", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-        Text(if (s?.synced == true) "Database jam tersedia" else "Menunggu sinkronisasi pertama", fontWeight = FontWeight.SemiBold)
+        Text(when { s?.synced == true -> "Database Huawei tersedia"; !s?.acts.isNullOrEmpty() -> "Riwayat aktivitas tersimpan"; else -> "Menunggu sinkronisasi pertama" }, fontWeight = FontWeight.SemiBold)
         Text(s?.overview?.lastSampleSec?.let { "Sampel terakhir: " + DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale("id")).withZone(ZoneId.systemDefault()).format(Instant.ofEpochSecond(it)) } ?: "Belum ada sampel harian",
             color = Muted, fontSize = 12.sp)
         s?.error?.let { Text("Catatan pembacaan: $it", color = Color(0xFFB3261E), fontSize = 12.sp) }
