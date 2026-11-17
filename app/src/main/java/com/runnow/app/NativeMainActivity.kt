@@ -271,9 +271,9 @@ private fun HistoryScreen(s: NativeState?) {
                 WorkoutRow(w)
                 val act = s?.acts?.firstOrNull { it.icuId == w.id.toString() }
                 val review = s?.reviews?.get(act?.start)
-                if (review != null && review.headline != null) {
+                if (review != null) review.headline?.let { headline ->
                     Divider(color = Surface)
-                    Text(review.headline, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text(headline, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                     Text(review.summary, color = Muted, fontSize = 12.sp)
                     review.sections.take(2).forEach { section ->
                         Text(section.title, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
