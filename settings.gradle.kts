@@ -16,3 +16,4 @@ rootProject.name = "RunNow"
 include(":app")
 include(":huawei")
 include(":domain")
+include(":data")
