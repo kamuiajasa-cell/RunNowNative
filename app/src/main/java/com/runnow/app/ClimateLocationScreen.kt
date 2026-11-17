@@ -31,6 +31,8 @@ internal fun ClimateLocationScreen(
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val localProfile = profile ?: PersonalClimateProfile(false, 0, 0, explanation = "Profil suhu personal belum tersedia.")
+    val lat = latitude.toDoubleOrNull()
+    val lon = longitude.toDoubleOrNull()
     LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
             SurfaceCard {
@@ -41,9 +43,9 @@ internal fun ClimateLocationScreen(
                 OutlinedTextField(value = latitude, onValueChange = { latitude = it.filter { ch -> ch.isDigit() || ch == '.' || ch == '-' }.take(12) }, label = { Text("Latitude") }, singleLine = true)
                 OutlinedTextField(value = longitude, onValueChange = { longitude = it.filter { ch -> ch.isDigit() || ch == '.' || ch == '-' }.take(12) }, label = { Text("Longitude") }, singleLine = true)
                 Button(
-                    enabled = !loading && latitude.toDoubleOrNull()?.let { it in -90.0..90.0 } == true && longitude.toDoubleOrNull()?.let { it in -180.0..180.0 } == true,
+                    enabled = !loading && lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0,
                     onClick = {
-                        val loc = ClimateLocation(latitude.toDouble(), longitude.toDouble(), name.takeIf { it.isNotBlank() }, true)
+                        val loc = ClimateLocation(requireNotNull(lat), requireNotNull(lon), name.takeIf { it.isNotBlank() }, true)
                         scope.launch {
                             loading = true
                             error = null
