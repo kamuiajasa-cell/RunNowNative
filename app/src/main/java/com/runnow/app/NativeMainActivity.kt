@@ -316,16 +316,6 @@ private fun TodayScreen(s: NativeState?, onPair: () -> Unit, onSaveSettings: (Se
 private fun HistoryScreen(s: NativeState?, loadActivityPoints: suspend (Act) -> List<WatchWorkoutPoint>) {
     var period by remember { mutableStateOf("Bulan ini") }
     var selected by remember { mutableStateOf<Act?>(null) }
-    var stream by remember(selected?.id) { mutableStateOf<List<WatchWorkoutPoint>>(emptyList()) }
-    var streamLoading by remember(selected?.id) { mutableStateOf(false) }
-    var streamError by remember(selected?.id) { mutableStateOf<String?>(null) }
-    LaunchedEffect(selected?.id) {
-        val id = selected?.id ?: return@LaunchedEffect
-        streamLoading = true
-        streamError = null
-        try { stream = loadWorkoutPoints(id) } catch (e: Exception) { streamError = e.message ?: "Gagal membaca rekaman aktivitas" }
-        streamLoading = false
-    }
     val today = LocalDate.now()
     val all = s?.acts.orEmpty()
     val filtered = all.filter { act ->
@@ -435,17 +425,20 @@ private fun ActivityStreamSummary(points: List<WatchWorkoutPoint>, loading: Bool
             HeartRateStreamChart(points)
             if (restingHr > 0 && maxHr > restingHr) HeartRateZones(hr, restingHr, maxHr)
         } else Text("Rekaman detak jantung tidak cukup untuk membuat grafik.", color = Muted, fontSize = 12.sp)
-        val splits = gpsPaceSplits(points)
+        PaceStreamChart(points)
+        val speeds = points.mapNotNull { it.speed?.takeIf { v -> v in 0.5..12.0 } }
+        if (speeds.isNotEmpty()) Metric("Pace stream rata-rata", String.format(Locale.US, "%d:%02d/km", (60.0 / speeds.average()).toInt() / 60, (60.0 / speeds.average()).toInt() % 60))
+        val splits = streamPaceSplits(points)
         if (splits.isNotEmpty()) {
             Divider()
-            Text("SPLIT GPS", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text("SPLIT PER KM", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             splits.forEachIndexed { index, seconds ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("KM ${index + 1}", fontSize = 12.sp)
                     Text(String.format(Locale.US, "%d:%02d /km", seconds / 60, seconds % 60), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
-            Text("Split dihitung dari lintasan GPS yang valid; segmen dengan jeda atau lonjakan GPS diabaikan.", color = Muted, fontSize = 10.sp)
+            Text("Split dihitung dari speed atau GPS yang valid; jeda dan lonjakan data diabaikan.", color = Muted, fontSize = 10.sp)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Metric("Cadence rata-rata", cadence.takeIf { it.isNotEmpty() }?.let { "${it.average().toInt()} spm" } ?: "—")
@@ -480,9 +473,8 @@ private fun HeartRateZones(values: List<Int>, restingHr: Double, maxHr: Double) 
     }
 }
 
-private fun gpsPaceSplits(points: List<WatchWorkoutPoint>): List<Int> {
-    val gps = points.filter { it.lat != null && it.lon != null }
-    if (gps.size < 2) return emptyList()
+private fun streamPaceSplits(points: List<WatchWorkoutPoint>): List<Int> {
+    if (points.size < 2) return emptyList()
     fun distance(a: WatchWorkoutPoint, b: WatchWorkoutPoint): Double {
         val lat1 = Math.toRadians(a.lat!!); val lat2 = Math.toRadians(b.lat!!)
         val dLat = lat2 - lat1; val dLon = Math.toRadians(b.lon!! - a.lon!!)
@@ -490,15 +482,17 @@ private fun gpsPaceSplits(points: List<WatchWorkoutPoint>): List<Int> {
             kotlin.math.cos(lat1) * kotlin.math.cos(lat2) * kotlin.math.sin(dLon / 2).let { it * it }
         return 6371000.0 * 2 * kotlin.math.asin(kotlin.math.sqrt(h.coerceIn(0.0, 1.0)))
     }
-    val first = gps.first().tsSec
+    val first = points.first().tsSec
     var cumulative = 0.0
-    var previous = gps.first()
+    var previous = points.first()
     val splits = mutableListOf<Int>()
     var nextKm = 1000.0
     var lastBoundaryElapsed = 0.0
-    for (point in gps.drop(1)) {
+    for (point in points.drop(1)) {
         val dt = point.tsSec - previous.tsSec
-        val segment = distance(previous, point)
+        val gpsSegment = if (previous.lat != null && previous.lon != null && point.lat != null && point.lon != null) distance(previous, point) else null
+        val speedSegment = (point.speed ?: previous.speed)?.takeIf { it.isFinite() && it in 0.5..12.0 }?.times(dt.toDouble())
+        val segment = gpsSegment ?: speedSegment ?: 0.0
         if (dt in 1..20 && segment in 0.5..(dt * 12.0)) {
             val before = cumulative
             cumulative += segment
@@ -514,6 +508,40 @@ private fun gpsPaceSplits(points: List<WatchWorkoutPoint>): List<Int> {
         previous = point
     }
     return splits
+}
+
+@Composable
+private fun PaceStreamChart(points: List<WatchWorkoutPoint>) {
+    val samples = points.mapNotNull { p ->
+        p.speed?.takeIf { it in 0.5..12.0 }?.let { p.tsSec to (60.0 / it).toFloat() }?.takeIf { it.second in 2.5f..20f }
+    }
+    if (samples.size < 2) return
+    val min = samples.minOf { it.second }.coerceAtLeast(2.5f)
+    val max = samples.maxOf { it.second }.coerceAtMost(20f)
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("PACE · MENIT/KM", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        Canvas(Modifier.fillMaxWidth().height(100.dp)) {
+            val span = (max - min).coerceAtLeast(.1f)
+            val left = 8f; val top = 8f; val width = size.width - 16f; val height = size.height - 16f
+            for (i in 0..3) {
+                val y = top + height * i / 3f
+                drawLine(Color(0xFFE6EBE4), Offset(left, y), Offset(left + width, y), 1.dp.toPx())
+            }
+            val first = samples.first().first
+            val duration = (samples.last().first - first).coerceAtLeast(1L).toFloat()
+            val path = androidx.compose.ui.graphics.Path()
+            samples.forEachIndexed { index, sample ->
+                val x = left + width * ((sample.first - first) / duration)
+                val y = top + height * (1f - (sample.second - min) / span)
+                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            drawPath(path, color = Ink, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx()))
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Mulai", color = Muted, fontSize = 10.sp)
+            Text("Selesai", color = Muted, fontSize = 10.sp)
+        }
+    }
 }
 
 @Composable
