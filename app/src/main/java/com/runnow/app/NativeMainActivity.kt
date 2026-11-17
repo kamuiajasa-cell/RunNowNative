@@ -96,8 +96,10 @@ private class NativeDataSource(private val activity: android.content.Context) {
                     val workoutId = sourceId.removePrefix("hw").toLongOrNull() ?: return@matchRecentRuns null
                     val workout = workouts.firstOrNull { it.id == workoutId } ?: return@matchRecentRuns null
                     watch.workoutPoints(workoutId).mapNotNull { point ->
-                        if (point.lat == null || point.lon == null) null
-                        else com.runnow.data.ActivityGpsPoint((point.tsSec - workout.startSec).toDouble(), point.lat, point.lon)
+                        val lat = point.lat
+                        val lon = point.lon
+                        if (lat == null || lon == null) null
+                        else com.runnow.data.ActivityGpsPoint((point.tsSec - workout.startSec).toDouble(), lat, lon)
                     }
                 } else if (!intervalsKey.isNullOrBlank() && sourceId.isNotBlank()) {
                     com.runnow.data.IntervalsIcuClient(intervalsKey).activityGps(sourceId, act.min * 60.0)
@@ -282,7 +284,8 @@ private fun HistoryScreen(s: NativeState?) {
                         Text(section.title, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                         section.notes.take(2).forEach { Text("• ${it.text}", color = Muted, fontSize = 12.sp) }
                     }
-                }                val climate = act?.let { s?.climateContexts?.get(it.start) }
+                }
+                val climate = act?.let { s?.climateContexts?.get(it.start) }
                 climate?.let { ctx ->
                     val c = ctx.conditions
                     Divider(color = Surface)
