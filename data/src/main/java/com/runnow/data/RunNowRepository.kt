@@ -118,11 +118,15 @@ class RunNowRepository(context: Context) {
                     val dt = p.tsSec - prev.tsSec
                     if (dt <= 0) return@pointLoop
                     val bySpeed = p.speed?.takeIf { it > 0 }?.times(dt)
-                    val byGps = if (prev.lat != null && prev.lon != null && p.lat != null && p.lon != null) {
-                        val lat1 = Math.toRadians(prev.lat)
-                        val lat2 = Math.toRadians(p.lat)
+                    val prevLat = prev.lat
+                    val prevLon = prev.lon
+                    val pointLat = p.lat
+                    val pointLon = p.lon
+                    val byGps = if (prevLat != null && prevLon != null && pointLat != null && pointLon != null) {
+                        val lat1 = Math.toRadians(prevLat)
+                        val lat2 = Math.toRadians(pointLat)
                         val dLat = lat2 - lat1
-                        val dLon = Math.toRadians(p.lon - prev.lon)
+                        val dLon = Math.toRadians(pointLon - prevLon)
                         val h = kotlin.math.sin(dLat / 2) * kotlin.math.sin(dLat / 2) +
                             kotlin.math.cos(lat1) * kotlin.math.cos(lat2) *
                             kotlin.math.sin(dLon / 2) * kotlin.math.sin(dLon / 2)
