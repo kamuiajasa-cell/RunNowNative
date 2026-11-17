@@ -110,7 +110,13 @@ private class NativeDataSource(private val activity: android.content.Context) {
         val restingHr = prefs.getFloat("resting_hr", 0f).toDouble()
         val maxHr = prefs.getFloat("max_hr", 0f).toDouble()
         val goal = prefs.getString("goal", "5K") ?: "5K"
-        val profile = Profile(rest = restingHr, max = maxHr, age = age, restManual = restingHr > 0)
+        val nativeSettings = NativeSettingsStore(activity).load()
+        val ltParts = nativeSettings.athlete.ltPace.split(":")
+        val ltPaceSeconds = if (ltParts.size == 2) (ltParts[0].toIntOrNull() ?: 0) * 60 + (ltParts[1].toIntOrNull() ?: 0) else 0
+        val profile = Profile(
+            rest = restingHr, max = maxHr, age = age, restManual = restingHr > 0,
+            lthrC = nativeSettings.athlete.lthr, ltpC = ltPaceSeconds,
+        )
         val repository = com.runnow.data.RunNowRepository(activity)
         val data = repository.load(profile = profile)
         val climateRepository = com.runnow.data.ClimateDataRepository(activity)
@@ -143,7 +149,7 @@ private class NativeDataSource(private val activity: android.content.Context) {
             act.start to climateAdvice(context.conditions, climateProfile, tag, false,
                 comparison?.deltaHr, comparison?.count ?: 0, comparison?.confidence)
         }.toMap()
-        var snap = data.snapshot.copy(settings = NativeSettingsStore(activity).load().copy(goal = goal))
+        var snap = data.snapshot.copy(settings = nativeSettings.copy(goal = goal))
         val acts = snap.acts
         val wellness = snap.wellness
         val process = if (acts.isNotEmpty() || wellness.isNotEmpty()) snap.processData() else null
