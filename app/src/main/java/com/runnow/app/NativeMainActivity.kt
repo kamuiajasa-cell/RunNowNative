@@ -464,6 +464,7 @@ private fun gpsPaceSplits(points: List<WatchWorkoutPoint>): List<Int> {
     var previous = gps.first()
     val splits = mutableListOf<Int>()
     var nextKm = 1000.0
+    var lastBoundaryElapsed = 0.0
     for (point in gps.drop(1)) {
         val dt = point.tsSec - previous.tsSec
         val segment = distance(previous, point)
@@ -473,9 +474,9 @@ private fun gpsPaceSplits(points: List<WatchWorkoutPoint>): List<Int> {
             while (cumulative >= nextKm) {
                 val fraction = ((nextKm - before) / segment).coerceIn(0.0, 1.0)
                 val elapsed = (previous.tsSec - first) + dt * fraction
-                val priorElapsed = if (splits.isEmpty()) 0.0 else splits.sum().toDouble()
-                val splitSeconds = (elapsed - priorElapsed).toInt()
+                val splitSeconds = (elapsed - lastBoundaryElapsed).toInt()
                 if (splitSeconds in 120..1200) splits.add(splitSeconds)
+                lastBoundaryElapsed = elapsed
                 nextKm += 1000.0
             }
         }
