@@ -41,6 +41,7 @@ class NativeMainActivity : ComponentActivity() {
         setContent { RunNowNativeApp(
             onPair = { startActivity(Intent(this, PairingActivity::class.java)) },
             onSettings = { startActivity(Intent(this, SettingsActivity::class.java)) },
+            onSaveProfile = { age, rest, max, goal -> getSharedPreferences("native_athlete", MODE_PRIVATE).edit().putInt("age", age).putFloat("resting_hr", rest.toFloat()).putFloat("max_hr", max.toFloat()).putString("goal", goal).apply() },
             load = { NativeDataSource(this).load() },
         ) }
     }
@@ -56,6 +57,10 @@ private data class NativeState(
     val reviews: Map<Long, RunReview>,
     val synced: Boolean,
     val error: String?,
+    val age: Int,
+    val restingHr: Double,
+    val maxHr: Double,
+    val goal: String,
 )
 
 private class NativeDataSource(private val activity: android.content.Context) {
@@ -123,19 +128,24 @@ private class NativeDataSource(private val activity: android.content.Context) {
                 .summarizeStream(raw, minN = 30)
             summary?.let { workout.id.toString() to it }
         }.toMap()
-        val profile = Profile()
-        var snap = Snapshot(profile, acts, wellness, nowMs = System.currentTimeMillis(), zone = zone, streams = streamSummaries)
+        val prefs = activity.getSharedPreferences("native_athlete", android.content.Context.MODE_PRIVATE)
+        val age = prefs.getInt("age", 0)
+        val restingHr = prefs.getFloat("resting_hr", 0f).toDouble()
+        val maxHr = prefs.getFloat("max_hr", 0f).toDouble()
+        val goal = prefs.getString("goal", "5K") ?: "5K"
+        val profile = Profile(rest = restingHr, max = maxHr, age = age, restManual = restingHr > 0)
+        var snap = Snapshot(profile, acts, wellness, nowMs = System.currentTimeMillis(), zone = zone, settings = Settings(goal = goal), streams = streamSummaries)
         val process = if (acts.isNotEmpty() || wellness.isNotEmpty()) snap.processData() else null
         if (process != null) {
             snap = snap.withProcessed(process)
         }
         val reviews = acts.filter { it.kind == ActKind.RUN }.associate { it.start to snap.reviewRun(it) }
-        NativeState(overview, workouts, days, sleep, hrv, process, reviews, watch.available(), watch.lastError)
+        NativeState(overview, workouts, days, sleep, hrv, process, reviews, watch.available(), watch.lastError, age, restingHr, maxHr, goal)
     }
 }
 
 @Composable
-private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, load: suspend () -> NativeState) {
+private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSaveProfile: (Int, Double, Double, String) -> Unit, load: suspend () -> NativeState) {
     var tab by remember { mutableIntStateOf(0) }
     var state by remember { mutableStateOf<NativeState?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -182,7 +192,7 @@ private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, load: su
                     0 -> TodayScreen(s, onPair)
                     1 -> HistoryScreen(s)
                     2 -> AnalysisScreen(s)
-                    else -> ProfileScreen(s, onPair, onSettings)
+                    else -> ProfileScreen(s, onPair, onSettings, onSaveProfile)
                 }
             }
         }
@@ -337,8 +347,30 @@ private fun AnalysisScreen(s: NativeState?) {
 }
 
 @Composable
-private fun ProfileScreen(s: NativeState?, onPair: () -> Unit, onSettings: () -> Unit) {
+private fun ProfileScreen(s: NativeState?, onPair: () -> Unit, onSettings: () -> Unit, onSaveProfile: (Int, Double, Double, String) -> Unit) {
+    var age by remember(s?.age) { mutableStateOf(if ((s?.age ?: 0) > 0) s!!.age.toString() else "") }
+    var rest by remember(s?.restingHr) { mutableStateOf(if ((s?.restingHr ?: 0.0) > 0) s!!.restingHr.toInt().toString() else "") }
+    var max by remember(s?.maxHr) { mutableStateOf(if ((s?.maxHr ?: 0.0) > 0) s!!.maxHr.toInt().toString() else "") }
+    var goal by remember(s?.goal) { mutableStateOf(s?.goal ?: "5K") }
     LazyColumn(contentPadding = PaddingValues(horizontal = 18.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        item {
+            SurfaceCard {
+                Text("PROFIL ATLET", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text("Kalibrasi analisis", fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                Text("Isi hanya nilai yang kamu ketahui. Kosongkan RHR atau HRmax bila belum yakin.", color = Muted, fontSize = 12.sp)
+                OutlinedTextField(value = age, onValueChange = { age = it.filter(Char::isDigit).take(3) }, label = { Text("Usia (tahun)") }, singleLine = true)
+                OutlinedTextField(value = rest, onValueChange = { rest = it.filter(Char::isDigit).take(3) }, label = { Text("RHR manual (bpm, opsional)") }, singleLine = true)
+                OutlinedTextField(value = max, onValueChange = { max = it.filter(Char::isDigit).take(3) }, label = { Text("HRmax (bpm, opsional)") }, singleLine = true)
+                Text("Target utama", color = Muted, fontSize = 12.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("5K", "10K", "Half", "Marathon", "Umum").forEach { item ->
+                        FilterChip(selected = goal == item, onClick = { goal = item }, label = { Text(item) })
+                    }
+                }
+                Button(onClick = { onSaveProfile(age.toIntOrNull() ?: 0, rest.toDoubleOrNull() ?: 0.0, max.toDoubleOrNull() ?: 0.0, goal) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("Simpan profil") }
+            }
+        }
         item {
             SurfaceCard {
                 Text("SUMBER DATA", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
