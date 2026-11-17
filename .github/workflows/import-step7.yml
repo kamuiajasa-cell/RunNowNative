@@ -35,7 +35,7 @@ jobs:
           test -f "$SOURCE/settings.gradle.kts"
           # Copy the archive's project contents to the repository root.
           # Keep the existing signing keystore out of this public repository.
-          rsync -a --exclude='app/polarrun.keystore' "$SOURCE/" ./
+          rsync -a --exclude='app/polarrun.keystore' --exclude='.github/workflows/build.yml' "$SOURCE/" ./
           rm -f runnow-step7.zip
           echo "Imported files:"
           find . -type f -not -path './.git/*' | sort | wc -l
