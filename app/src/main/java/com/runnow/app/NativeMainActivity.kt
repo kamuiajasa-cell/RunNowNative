@@ -813,11 +813,16 @@ private fun AnalysisScreen(s: NativeState?) {
                 item {
                     SurfaceCard {
                         Text("REKOR AKTIVITAS", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        val best5k = runs.filter { it.km >= 4.8 && it.km <= 5.3 && it.min > 0 }.minByOrNull { it.min }
-                        val best10k = runs.filter { it.km >= 9.7 && it.km <= 10.5 && it.min > 0 }.minByOrNull { it.min }
-                        Metric("5K terdekat", best5k?.let { "${it.min.toInt()} menit · ${String.format(Locale.US, "%.2f km", it.km)}" } ?: "Belum ada data")
-                        Metric("10K terdekat", best10k?.let { "${it.min.toInt()} menit · ${String.format(Locale.US, "%.2f km", it.km)}" } ?: "Belum ada data")
-                        Text("Ini sesi dengan jarak terdekat pada arsip, bukan rekor resmi hasil pemotongan split.", color = Muted, fontSize = 11.sp)
+                        val targets = listOf("1K" to (0.8..1.2), "3K" to (2.8..3.2), "5K" to (4.8..5.3), "10K" to (9.7..10.5), "Half" to (20.0..22.0), "Full" to (40.0..43.0))
+                        targets.forEach { (label, range) ->
+                            val best = runs.filter { it.km in range && it.min > 0 }.minByOrNull { it.min / it.km }
+                            val value = best?.let {
+                                val sec = (it.min * 60 / it.km).toInt()
+                                String.format(Locale.US, "%d:%02d/km · %.2f km", sec / 60, sec % 60, it.km)
+                            } ?: "Belum ada data"
+                            Metric(label, value)
+                        }
+                        Text("Pace rata-rata dari sesi yang jaraknya mendekati target, bukan rekor resmi dari rolling split. Untuk akurasi rekor, gunakan stream lengkap.", color = Muted, fontSize = 11.sp)
                     }
                 }
             }
