@@ -23,6 +23,7 @@ import com.joyodigitama.huaweiwear.*
 import com.runnow.domain.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -107,6 +108,7 @@ private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, load: su
     var state by remember { mutableStateOf<NativeState?>(null) }
     var busy by remember { mutableStateOf(false) }
     var failure by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
     suspend fun refresh() {
         busy = true
         try { state = load(); failure = null } catch (e: Exception) { failure = e.message ?: "Gagal membaca data jam" }
@@ -137,7 +139,7 @@ private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, load: su
                         Text(listOf("Hari Ini", "Riwayat Aktivitas", "Analisis Latihan", "Profil Atlet")[tab],
                             fontSize = 25.sp, fontWeight = FontWeight.Bold, color = Ink)
                     }
-                    TextButton(onClick = { kotlinx.coroutines.MainScope().launch { refresh() } }) {
+                    TextButton(onClick = { scope.launch { refresh() } }) {
                         Text(if (busy) "Memuat…" else "Sinkron", color = Ink)
                     }
                 }
