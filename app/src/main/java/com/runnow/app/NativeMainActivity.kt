@@ -109,7 +109,7 @@ private class NativeDataSource(private val activity: android.content.Context) {
         val climateContexts = climateRepository.contexts()
         val climateProfile = data.snapshot.personalClimateProfile(climateContexts)
         val climateComparisons = data.snapshot.personalClimateComparisons(climateContexts, climateProfile)
-        val climateAdvice = data.snapshot.acts.mapNotNull { act ->
+        val climateAdviceByStart = data.snapshot.acts.mapNotNull { act ->
             val context = climateContexts[act.start] ?: return@mapNotNull null
             val guess = data.snapshot.detectType(act).type
             val tag = when (guess) { "thr", "vo2" -> "QUALITY"; "long" -> "LONG"; else -> "EASY" }
@@ -126,7 +126,7 @@ private class NativeDataSource(private val activity: android.content.Context) {
         NativeState(
             overview, workouts, acts, days, sleep, hrv, process, reviews,
             data.watchAvailable, data.watchError, age, restingHr, maxHr, goal,
-            intervalsKey != null, climateContexts, climateProfile, climateAdvice, climateComparisons,
+            intervalsKey != null, climateContexts, climateProfile, climateAdviceByStart, climateComparisons,
         )
     }
 
