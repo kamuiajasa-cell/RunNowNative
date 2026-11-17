@@ -107,7 +107,8 @@ private class NativeDataSource(private val activity: android.content.Context) {
         val climateProfile = data.snapshot.personalClimateProfile(climateContexts)
         val climateAdvice = data.snapshot.acts.mapNotNull { act ->
             val context = climateContexts[act.start] ?: return@mapNotNull null
-            val tag = data.snapshot.detectType(act).type.uppercase()
+            val guess = data.snapshot.detectType(act).type
+            val tag = when (guess) { "thr", "vo2" -> "QUALITY"; "long" -> "LONG"; else -> "EASY" }
             act.start to climateAdvice(context.conditions, climateProfile, tag, false)
         }.toMap()
         var snap = data.snapshot.copy(settings = Settings(goal = goal))
