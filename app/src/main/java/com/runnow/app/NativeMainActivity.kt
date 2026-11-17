@@ -137,7 +137,7 @@ private class NativeDataSource(private val activity: android.content.Context) {
         val reviews = acts.filter { it.kind == ActKind.RUN }.associate { it.start to snap.reviewRun(it) }
         NativeState(
             overview, workouts, acts, days, sleep, hrv, process, reviews,
-            data.watchAvailable, data.watchError, age, restingHr, maxHr, goal, snap.settings,
+            (data.watchAvailable || data.snapshot.acts.isNotEmpty()), data.watchError, age, restingHr, maxHr, goal, snap.settings,
             intervalsKey != null, climateContexts, climateProfile, climateRepository.savedLocation(), climateAdviceByStart, climateComparisons,
         )
     }
@@ -332,24 +332,24 @@ private fun TodayScreen(s: NativeState?, onPair: () -> Unit, onSaveSettings: (Se
         item {
             SurfaceCard {
                 Text("MINGGU BERJALAN", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
-                val week = s?.workouts.orEmpty().filter {
-                    val d = Instant.ofEpochSecond(it.startSec).atZone(ZoneId.systemDefault()).dayOfWeek.value
-                    val daysAgo = (java.time.LocalDate.now().dayOfWeek.value - d + 7) % 7
-                    daysAgo < 7 && Instant.ofEpochSecond(it.startSec).atZone(ZoneId.systemDefault()).toLocalDate().isAfter(java.time.LocalDate.now().minusDays(7))
+                val weekStart = LocalDate.now().with(java.time.DayOfWeek.MONDAY)
+                val week = s?.acts.orEmpty().filter {
+                    val date = Instant.ofEpochMilli(it.start).atZone(ZoneId.systemDefault()).toLocalDate()
+                    !date.isBefore(weekStart) && date.isBefore(weekStart.plusDays(7))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                    Metric("Jarak", String.format(Locale.US, "%.1f km", week.sumOf { it.distanceM } / 1000.0))
+                    Metric("Jarak", String.format(Locale.US, "%.1f km", week.sumOf { it.km }))
                     Metric("Sesi", week.size.toString())
-                    Metric("Durasi", "${week.sumOf { it.durationSec } / 3600} jam")
+                    Metric("Durasi", "${week.sumOf { it.min }.toInt() / 60} jam")
                 }
             }
         }
         item {
             SurfaceCard {
                 Text("AKTIVITAS TERAKHIR", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
-                val last = s?.workouts?.firstOrNull()
-                if (last == null) Text("Belum ada aktivitas dari jam.", color = Muted)
-                else WorkoutRow(last)
+                val last = s?.acts?.maxByOrNull { it.start }
+                if (last == null) Text("Belum ada aktivitas tersimpan.", color = Muted)
+                else ActivityRow(last)
             }
         }
         item { DataStatus(s) }
