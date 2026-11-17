@@ -117,7 +117,7 @@ class RunNowRepository(context: Context) {
                 if (prev != null) {
                     val dt = p.tsSec - prev.tsSec
                     if (dt <= 0) return@pointLoop
-                    val bySpeed = p.speed?.takeIf { it > 0 }?.times(dt)
+                    val bySpeed = p.speed?.takeIf { it > 0 }?.times(dt)?.takeIf { it < 100.0 }
                     val prevLat = prev.lat
                     val prevLon = prev.lon
                     val pointLat = p.lat
