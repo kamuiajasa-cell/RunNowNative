@@ -626,7 +626,7 @@ private fun HeartRateStreamChart(points: List<WatchWorkoutPoint>) {
 @Composable
 private fun AnalysisScreen(s: NativeState?) {
     var section by remember { mutableStateOf("Ikhtisar") }
-    val sections = listOf("Ikhtisar", "Beban", "Performa", "Wellness")
+    val sections = listOf("Ikhtisar", "Tren", "Beban", "Performa", "Wellness")
     val runs = s?.acts.orEmpty().filter { it.kind == ActKind.RUN }
     val athlete = s?.result?.athlete
     val totalKm = runs.sumOf { it.km }
@@ -638,6 +638,18 @@ private fun AnalysisScreen(s: NativeState?) {
             val d = Instant.ofEpochMilli(act.start).atZone(ZoneId.systemDefault()).toLocalDate()
             !d.isBefore(weekStart) && d.isBefore(weekStart.plusDays(7))
         }.sumOf { it.km }.toFloat()
+    }
+    val months = (5 downTo 0).map { back ->
+        val month = LocalDate.now().withDayOfMonth(1).minusMonths(back.toLong())
+        val items = runs.filter { act ->
+            val d = Instant.ofEpochMilli(act.start).atZone(ZoneId.systemDefault()).toLocalDate()
+            d.year == month.year && d.month == month.month
+        }
+        val distance = items.sumOf { it.km }
+        val minutes = items.sumOf { it.min }
+        val hrSamples = items.filter { it.avgHr > 0 }
+        val avgHr = hrSamples.takeIf { it.isNotEmpty() }?.let { list -> list.sumOf { it.avgHr * it.min } / list.sumOf { it.min }.coerceAtLeast(1.0) }
+        Triple(month, items, Triple(distance, minutes, avgHr))
     }
     LazyColumn(contentPadding = PaddingValues(horizontal = 18.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
@@ -672,6 +684,55 @@ private fun AnalysisScreen(s: NativeState?) {
                             }
                         }
                         Text(String.format(Locale.US, "Rata-rata %.1f km per minggu", weeks.average()), fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+            "Tren" -> {
+                item {
+                    SurfaceCard {
+                        Text("TREN 6 BULAN", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        val maxKm = months.maxOfOrNull { it.third.first }?.coerceAtLeast(1.0) ?: 1.0
+                        Row(Modifier.fillMaxWidth().height(150.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
+                            months.forEach { (month, items, metrics) ->
+                                Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
+                                    Text(String.format(Locale.US, "%.0f", metrics.first), fontSize = 9.sp, color = Muted)
+                                    Box(Modifier.fillMaxWidth().height((metrics.first / maxKm * 100.0).coerceAtLeast(4.0).dp).background(if (month.month == LocalDate.now().month && month.year == LocalDate.now().year) Accent else Ink, RoundedCornerShape(topStart = 5.dp, topEnd = 5.dp)))
+                                    Text(month.month.getDisplayName(java.time.format.TextStyle.SHORT, Locale("id")), fontSize = 9.sp, color = Muted)
+                                }
+                            }
+                        }
+                        Text("Jarak lari per bulan (km). Bulan berjalan belum lengkap.", color = Muted, fontSize = 11.sp)
+                    }
+                }
+                item {
+                    SurfaceCard {
+                        Text("RINCIAN BULANAN", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        months.asReversed().forEach { (month, items, metrics) ->
+                            val pace = if (metrics.first > 0) (metrics.second / metrics.first * 60.0).toInt() else 0
+                            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text(month.month.getDisplayName(java.time.format.TextStyle.FULL, Locale("id")) + " " + month.year, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                    Text(String.format(Locale.US, "%.1f km · %d sesi", metrics.first, items.size), fontSize = 12.sp)
+                                }
+                                Text((if (pace > 0) String.format(Locale.US, "Pace rata-rata %d:%02d/km", pace / 60, pace % 60) else "Belum ada pace") +
+                                    (metrics.third?.let { " · HR rata-rata ${it.toInt()} bpm" } ?: ""), color = Muted, fontSize = 11.sp)
+                            }
+                            Divider(color = Surface)
+                        }
+                    }
+                }
+                item {
+                    SurfaceCard {
+                        Text("KONSISTENSI MINGGUAN", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
+                            weeks.forEachIndexed { i, value ->
+                                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Box(Modifier.fillMaxWidth().height((value * 4 + 4).coerceAtMost(110f).dp).background(if (i == 7) Accent else Ink, RoundedCornerShape(4.dp)))
+                                    Text("${i + 1}", color = Muted, fontSize = 9.sp)
+                                }
+                            }
+                        }
+                        Text("Delapan minggu terakhir, Senin–Minggu. Minggu berjalan belum lengkap.", color = Muted, fontSize = 11.sp)
                     }
                 }
             }
