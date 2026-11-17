@@ -22,7 +22,7 @@ Halaman utama dimuat langsung dari URL HTTPS yang tersimpan di **Pengaturan > Al
 
 ## Fitur dan integrasi
 
-### Aplikasi RunSense
+### Aplikasi RunNow
 - Halaman utama berasal dari URL server yang diatur melalui `ServerConfig`; URL bawaan adalah `https://runnow2.kamui-aja-sa.workers.dev`.
 - Halaman pengaturan native berada di `app/src/main/assets/pengaturan.html` dan dibuka melalui `SettingsActivity`.
 - Navigasi layar native ditangani melalui `Routes.kt`.
