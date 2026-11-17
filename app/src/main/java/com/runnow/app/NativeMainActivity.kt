@@ -463,10 +463,10 @@ private fun ActivityStreamSummary(points: List<WatchWorkoutPoint>, loading: Bool
     if (loading) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-            Text("Membaca stream dari jam…", color = Muted, fontSize = 12.sp)
+            Text("Membaca stream aktivitas…", color = Muted, fontSize = 12.sp)
         }
     } else if (points.isEmpty()) {
-        Text(error ?: "Jam tidak menyediakan titik stream untuk sesi ini. Ringkasan aktivitas tetap tersedia.", color = Muted, fontSize = 12.sp)
+        Text(error ?: "Sumber data tidak menyediakan titik stream untuk sesi ini. Ringkasan aktivitas tetap tersedia.", color = Muted, fontSize = 12.sp)
     } else {
         val hr = points.mapNotNull { it.hr?.takeIf { v -> v in 30..240 } }
         val cadence = points.mapNotNull { it.cadence?.takeIf { v -> v > 0 } }
