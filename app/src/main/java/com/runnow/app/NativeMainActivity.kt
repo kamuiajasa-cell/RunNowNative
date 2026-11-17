@@ -51,6 +51,20 @@ class NativeMainActivity : ComponentActivity() {
             onSettings = { startActivity(Intent(this, PairingActivity::class.java)) },
             onSaveProfile = { age, rest, max, goal -> getSharedPreferences("native_athlete", MODE_PRIVATE).edit().putInt("age", age).putFloat("resting_hr", rest.toFloat()).putFloat("max_hr", max.toFloat()).putString("goal", goal).apply(); NativeSettingsStore(this).save(NativeSettingsStore(this).load().copy(goal = goal)) },
             onSaveSettings = { settings -> NativeSettingsStore(this).save(settings) },
+            onExport = { acts ->
+                val csv = buildString {
+                    appendLine("tanggal,jenis,nama,jarak_km,durasi_menit,pace_menit_per_km,hr_rata_rata,hr_maks,beban")
+                    acts.sortedBy { it.start }.forEach { act ->
+                        val date = Instant.ofEpochMilli(act.start).atZone(ZoneId.systemDefault()).toLocalDate()
+                        val kind = when (act.kind) { ActKind.RUN -> "lari"; ActKind.WALK -> "jalan"; else -> "lainnya" }
+                        val pace = if (act.km > 0) String.format(Locale.US, "%.2f", act.min / act.km) else ""
+                        val safeName = act.name.replace("\"", "\"\"")
+                        appendLine("$date,$kind,\"$safeName\",${act.km},${act.min},$pace,${act.avgHr},${act.maxHr},${act.load}")
+                    }
+                }
+                val send = Intent(Intent.ACTION_SEND).apply { type = "text/csv"; putExtra(Intent.EXTRA_TEXT, csv); putExtra(Intent.EXTRA_SUBJECT, "RunNow - riwayat aktivitas") }
+                startActivity(Intent.createChooser(send, "Bagikan ekspor aktivitas"))
+            },
             loadClimate = { location -> NativeDataSource(this).loadClimate(location) },
             loadActivityPoints = { act -> NativeDataSource(this).loadActivityPoints(act) },
             load = { NativeDataSource(this).load() },
@@ -187,7 +201,7 @@ private class NativeDataSource(private val activity: android.content.Context) {
 }
 
 @Composable
-private fun RunNowNativeApp(onboardingDone: Boolean, onFinishOnboarding: () -> Unit, onPair: () -> Unit, onSettings: () -> Unit, onSaveProfile: (Int, Double, Double, String) -> Unit, onSaveSettings: (Settings) -> Unit, loadClimate: suspend (ClimateLocation) -> WeatherBundle, loadActivityPoints: suspend (Act) -> List<WatchWorkoutPoint>, load: suspend () -> NativeState, syncIntervals: suspend (String) -> NativeState) {
+private fun RunNowNativeApp(onboardingDone: Boolean, onFinishOnboarding: () -> Unit, onPair: () -> Unit, onSettings: () -> Unit, onExport: (List<Act>) -> Unit, onSaveProfile: (Int, Double, Double, String) -> Unit, onSaveSettings: (Settings) -> Unit, loadClimate: suspend (ClimateLocation) -> WeatherBundle, loadActivityPoints: suspend (Act) -> List<WatchWorkoutPoint>, load: suspend () -> NativeState, syncIntervals: suspend (String) -> NativeState) {
     var onboardingComplete by remember { mutableStateOf(onboardingDone) }
     var tab by remember { mutableIntStateOf(0) }
     var state by remember { mutableStateOf<NativeState?>(null) }
@@ -239,7 +253,7 @@ private fun RunNowNativeApp(onboardingDone: Boolean, onFinishOnboarding: () -> U
                     0 -> TodayScreen(s, onPair) { updated -> onSaveSettings(updated); state = state?.copy(settings = updated) }
                     1 -> HistoryScreen(s, loadActivityPoints)
                     2 -> AnalysisScreen(s)
-                    else -> ProfileScreen(s, onPair, onSettings, onSaveSettings, loadClimate, onSyncIntervals = { key ->
+                    else -> ProfileScreen(s, onPair, onSettings, onSaveSettings, loadClimate, onExport = { onExport(s?.acts.orEmpty()) }, onSyncIntervals = { key ->
                         scope.launch {
                             busy = true
                             try { state = syncIntervals(key); failure = null }
@@ -821,6 +835,7 @@ private fun ProfileScreen(
     onSettings: () -> Unit,
     onSaveSettings: (Settings) -> Unit,
     loadClimate: suspend (ClimateLocation) -> WeatherBundle,
+    onExport: () -> Unit,
     onSyncIntervals: (String) -> Unit,
     onSaveProfile: (Int, Double, Double, String) -> Unit,
 ) {
@@ -1012,6 +1027,8 @@ private fun ProfileScreen(
                         Text("Aktivitas, ringkasan stream, wellness, dan konteks cuaca disimpan di perangkat agar riwayat tidak bertambah ganda saat sinkronisasi diulang.", fontSize = 12.sp)
                         Text("API key Intervals.icu disimpan terenkripsi menggunakan Android Keystore.", color = Muted, fontSize = 12.sp)
                         Text("Sumber: Huawei Watch dan Intervals.icu. RunNow tidak merekam aktivitas GPS dari ponsel pada alur ini.", color = Muted, fontSize = 12.sp)
+                        Button(onClick = onExport, enabled = !s?.acts.isNullOrEmpty()) { Text("Ekspor riwayat aktivitas · CSV") }
+                        Text("Ekspor berisi ringkasan aktivitas, bukan rute GPS atau stream mentah.", color = Muted, fontSize = 11.sp)
                     }
                 }
             }
