@@ -49,6 +49,7 @@ class NativeMainActivity : ComponentActivity() {
             onSaveProfile = { age, rest, max, goal -> getSharedPreferences("native_athlete", MODE_PRIVATE).edit().putInt("age", age).putFloat("resting_hr", rest.toFloat()).putFloat("max_hr", max.toFloat()).putString("goal", goal).apply(); NativeSettingsStore(this).save(NativeSettingsStore(this).load().copy(goal = goal)) },
             onSaveSettings = { settings -> NativeSettingsStore(this).save(settings) },
             loadClimate = { location -> NativeDataSource(this).loadClimate(location) },
+            loadWorkoutPoints = { id -> NativeDataSource(this).loadWorkoutPoints(id) },
             load = { NativeDataSource(this).load() },
             syncIntervals = { key -> NativeDataSource(this).syncIntervals(key) },
         ) }
@@ -138,6 +139,8 @@ private class NativeDataSource(private val activity: android.content.Context) {
         )
     }
 
+    suspend fun loadWorkoutPoints(workoutId: Long): List<WatchWorkoutPoint> = withContext(Dispatchers.IO) { WatchData(activity).workoutPoints(workoutId) }
+
     suspend fun loadClimate(location: ClimateLocation): WeatherBundle = withContext(Dispatchers.IO) {
         com.runnow.data.ClimateDataRepository(activity).saveLocation(location)
         OpenMeteoProvider(activity).forecast(location, pastDays = 1, forecastDays = 3)
@@ -157,7 +160,7 @@ private class NativeDataSource(private val activity: android.content.Context) {
 }
 
 @Composable
-private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSaveProfile: (Int, Double, Double, String) -> Unit, onSaveSettings: (Settings) -> Unit, loadClimate: suspend (ClimateLocation) -> WeatherBundle, load: suspend () -> NativeState, syncIntervals: suspend (String) -> NativeState) {
+private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSaveProfile: (Int, Double, Double, String) -> Unit, onSaveSettings: (Settings) -> Unit, loadClimate: suspend (ClimateLocation) -> WeatherBundle, loadWorkoutPoints: suspend (Long) -> List<WatchWorkoutPoint>, load: suspend () -> NativeState, syncIntervals: suspend (String) -> NativeState) {
     var tab by remember { mutableIntStateOf(0) }
     var state by remember { mutableStateOf<NativeState?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -202,7 +205,7 @@ private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSavePr
                 if (busy && s == null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 else when (tab) {
                     0 -> TodayScreen(s, onPair) { updated -> onSaveSettings(updated); state = state?.copy(settings = updated) }
-                    1 -> HistoryScreen(s)
+                    1 -> HistoryScreen(s, loadWorkoutPoints)
                     2 -> AnalysisScreen(s)
                     else -> ProfileScreen(s, onPair, onSettings, onSaveSettings, loadClimate, onSyncIntervals = { key ->
                         scope.launch {
@@ -285,9 +288,19 @@ private fun TodayScreen(s: NativeState?, onPair: () -> Unit, onSaveSettings: (Se
 }
 
 @Composable
-private fun HistoryScreen(s: NativeState?) {
+private fun HistoryScreen(s: NativeState?, loadWorkoutPoints: suspend (Long) -> List<WatchWorkoutPoint>) {
     var period by remember { mutableStateOf("Bulan ini") }
     var selected by remember { mutableStateOf<WatchWorkout?>(null) }
+    var stream by remember(selected?.id) { mutableStateOf<List<WatchWorkoutPoint>>(emptyList()) }
+    var streamLoading by remember(selected?.id) { mutableStateOf(false) }
+    var streamError by remember(selected?.id) { mutableStateOf<String?>(null) }
+    LaunchedEffect(selected?.id) {
+        val id = selected?.id ?: return@LaunchedEffect
+        streamLoading = true
+        streamError = null
+        try { stream = loadWorkoutPoints(id) } catch (e: Exception) { streamError = e.message ?: "Gagal membaca rekaman aktivitas" }
+        streamLoading = false
+    }
     val today = LocalDate.now()
     val all = s?.workouts.orEmpty()
     val filtered = all.filter { w ->
@@ -338,8 +351,9 @@ private fun HistoryScreen(s: NativeState?) {
             onDismissRequest = { selected = null },
             title = { Text(w.sportName.ifBlank { "Detail aktivitas" }) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.heightIn(max = 520.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     WorkoutRow(w)
+                    ActivityStreamSummary(w, stream, streamLoading, streamError)
                     review?.let {
                         Divider()
                         Text(it.headline ?: "Analisis aktivitas", fontWeight = FontWeight.SemiBold)
@@ -359,6 +373,75 @@ private fun HistoryScreen(s: NativeState?) {
             },
             confirmButton = { TextButton(onClick = { selected = null }) { Text("Tutup") } },
         )
+    }
+}
+
+@Composable
+private fun ActivityStreamSummary(w: WatchWorkout, points: List<WatchWorkoutPoint>, loading: Boolean, error: String?) {
+    Divider()
+    Text("REKAMAN AKTIVITAS", fontWeight = FontWeight.SemiBold)
+    if (loading) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+            Text("Membaca stream dari jam…", color = Muted, fontSize = 12.sp)
+        }
+    } else if (points.isEmpty()) {
+        Text(error ?: "Jam tidak menyediakan titik stream untuk sesi ini. Ringkasan aktivitas tetap tersedia.", color = Muted, fontSize = 12.sp)
+    } else {
+        val hr = points.mapNotNull { it.hr?.takeIf { v -> v in 30..240 } }
+        val cadence = points.mapNotNull { it.cadence?.takeIf { v -> v > 0 } }
+        val altitude = points.mapNotNull { it.alt }
+        val gps = points.count { it.lat != null && it.lon != null }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Metric("Titik", points.size.toString())
+            Metric("HR terekam", hr.size.toString())
+            Metric("GPS", gps.toString())
+        }
+        if (hr.size >= 2) {
+            val avg = hr.average()
+            Metric("HR rata-rata / rentang", "${avg.toInt()} bpm · ${hr.minOrNull()}–${hr.maxOrNull()}")
+            HeartRateStreamChart(points)
+        } else Text("Rekaman detak jantung tidak cukup untuk membuat grafik.", color = Muted, fontSize = 12.sp)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Metric("Cadence rata-rata", cadence.takeIf { it.isNotEmpty() }?.let { "${it.average().toInt()} spm" } ?: "—")
+            Metric("Elevasi", if (altitude.size >= 2) "${altitude.minOrNull()!!.toInt()}–${altitude.maxOrNull()!!.toInt()} m" else "—")
+        }
+        Text("Grafik memakai sampel HR asli yang tersimpan; titik kosong tidak diinterpolasi.", color = Muted, fontSize = 10.sp)
+    }
+}
+
+@Composable
+private fun HeartRateStreamChart(points: List<WatchWorkoutPoint>) {
+    val samples = points.mapNotNull { p -> p.hr?.takeIf { it in 30..240 }?.let { p.tsSec to it.toFloat() } }
+    if (samples.size < 2) return
+    val min = (samples.minOf { it.second } - 5f).coerceAtLeast(30f)
+    val max = (samples.maxOf { it.second } + 5f).coerceAtMost(240f)
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("DETak JANTUNG · BPM", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        Canvas(Modifier.fillMaxWidth().height(112.dp)) {
+            val span = (max - min).coerceAtLeast(1f)
+            val left = 8f
+            val top = 8f
+            val width = size.width - 16f
+            val height = size.height - 16f
+            for (i in 0..3) {
+                val y = top + height * i / 3f
+                drawLine(Color(0xFFE6EBE4), Offset(left, y), Offset(left + width, y), 1.dp.toPx())
+            }
+            val first = samples.first().first
+            val duration = (samples.last().first - first).coerceAtLeast(1L).toFloat()
+            val path = androidx.compose.ui.graphics.Path()
+            samples.forEachIndexed { index, sample ->
+                val x = left + width * ((sample.first - first) / duration)
+                val y = top + height * (1f - (sample.second - min) / span)
+                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            drawPath(path, color = Ink, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx()))
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Mulai", color = Muted, fontSize = 10.sp)
+            Text("Selesai", color = Muted, fontSize = 10.sp)
+        }
     }
 }
 
