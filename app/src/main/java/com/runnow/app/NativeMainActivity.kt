@@ -72,76 +72,24 @@ private class NativeDataSource(private val activity: android.content.Context) {
         val days = watch.days(35)
         val sleep = watch.sleepNights(14)
         val hrv = watch.hrv(35)
-        val zone = ZoneId.systemDefault()
-        val acts = workouts.map { w ->
-            val kind = when {
-                w.sportType in setOf(1, 5, 11) || w.sportName.contains("run", true) || w.sportName.contains("lari", true) -> ActKind.RUN
-                w.sportType in setOf(2, 13, 14) || w.sportName.contains("walk", true) || w.sportName.contains("jalan", true) -> ActKind.WALK
-                else -> ActKind.OTHER
-            }
-            Act(
-                start = w.startSec * 1000L, kind = kind,
-                min = w.durationSec / 60.0, km = w.distanceM / 1000.0,
-                avgHr = (w.avgHr ?: 0).toDouble(), lid = "huawei:${w.id}",
-                name = w.sportName, maxHr = (w.maxHr ?: 0).toDouble(),
-                icuId = w.id.toString(),
-            )
-        }
-        val wellness = days.map { d ->
-            val night = sleep.firstOrNull { Instant.ofEpochSecond(it.startSec).atZone(zone).toLocalDate().toString() == d.date }
-            val hv = hrv.firstOrNull { Instant.ofEpochSecond(it.startSec).atZone(zone).toLocalDate().toString() == d.date && it.source.equals("night", true) }
-            Wellness(
-                id = d.date, restingHR = (d.restingHr ?: 0).toDouble(), hrv = hv?.rmssd ?: 0.0,
-                hrvSrc = hv?.source.orEmpty(), hrvSpot = hv?.source?.equals("spot", true) == true,
-                sleepSecs = (night?.asleepSec ?: 0).toDouble(), sleepScore = (night?.score ?: 0).toDouble(),
-                steps = d.steps.toDouble(), spO2 = (d.spo2Avg ?: 0).toDouble(),
-            )
-        }.sortedBy { it.id }
-        val streamSummaries = workouts.take(35).mapNotNull { workout ->
-            val points = watch.workoutPoints(workout.id).filter { it.lat != null && it.lon != null }
-            if (points.size < 30) return@mapNotNull null
-            val times = ArrayList<Double>(points.size)
-            val distances = ArrayList<Double>(points.size)
-            val heartRates = ArrayList<Double>(points.size)
-            var distance = 0.0
-            var previous: WatchWorkoutPoint? = null
-            val start = points.first().tsSec
-            points.forEach { point ->
-                val prev = previous
-                if (prev != null) {
-                    val lat1 = Math.toRadians(prev.lat!!)
-                    val lat2 = Math.toRadians(point.lat!!)
-                    val dLat = lat2 - lat1
-                    val dLon = Math.toRadians(point.lon!! - prev.lon!!)
-                    val h = kotlin.math.sin(dLat / 2) * kotlin.math.sin(dLat / 2) +
-                        kotlin.math.cos(lat1) * kotlin.math.cos(lat2) *
-                        kotlin.math.sin(dLon / 2) * kotlin.math.sin(dLon / 2)
-                    val segment = 6371000.0 * 2 * kotlin.math.asin(kotlin.math.sqrt(h.coerceIn(0.0, 1.0)))
-                    if (segment < 100.0) distance += segment
-                }
-                times += (point.tsSec - start).toDouble()
-                distances += distance
-                heartRates += (point.hr ?: 0).toDouble()
-                previous = point
-            }
-            val raw = StreamData(times, distances, heartRates.takeIf { values -> values.any { it > 0 } })
-            val summary = Snapshot(profile = Profile(), acts = emptyList(), wellness = emptyList(), nowMs = System.currentTimeMillis(), zone = zone)
-                .summarizeStream(raw, minN = 30)
-            summary?.let { workout.id.toString() to it }
-        }.toMap()
         val prefs = activity.getSharedPreferences("native_athlete", android.content.Context.MODE_PRIVATE)
         val age = prefs.getInt("age", 0)
         val restingHr = prefs.getFloat("resting_hr", 0f).toDouble()
         val maxHr = prefs.getFloat("max_hr", 0f).toDouble()
         val goal = prefs.getString("goal", "5K") ?: "5K"
         val profile = Profile(rest = restingHr, max = maxHr, age = age, restManual = restingHr > 0)
-        var snap = Snapshot(profile, acts, wellness, nowMs = System.currentTimeMillis(), zone = zone, settings = Settings(goal = goal), streams = streamSummaries)
+        val repository = com.runnow.data.RunNowRepository(activity)
+        val data = repository.load(profile = profile)
+        var snap = data.snapshot.copy(settings = Settings(goal = goal))
+        val acts = snap.acts
+        val wellness = snap.wellness
         val process = if (acts.isNotEmpty() || wellness.isNotEmpty()) snap.processData() else null
-        if (process != null) {
-            snap = snap.withProcessed(process)
-        }
+        if (process != null) snap = snap.withProcessed(process)
         val reviews = acts.filter { it.kind == ActKind.RUN }.associate { it.start to snap.reviewRun(it) }
-        NativeState(overview, workouts, acts, days, sleep, hrv, process, reviews, watch.available(), watch.lastError, age, restingHr, maxHr, goal)
+        NativeState(
+            overview, workouts, acts, days, sleep, hrv, process, reviews,
+            data.watchAvailable, data.watchError, age, restingHr, maxHr, goal,
+        )
     }
 }
 
