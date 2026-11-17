@@ -11,7 +11,7 @@ Migrasi aplikasi RunSense ke aplikasi Android native Kotlin/Jetpack Compose. Nam
 
 ## Batasan tahap ini
 - Migrasi UI dan alur data utama sudah dimulai, tetapi belum semua halaman/detail dan seluruh grafik HTML dipindahkan.
-- Stream GPS/HR detail belum dipetakan ke `StreamData` pada layar detail. Lapisan Huawei menyimpan titik aktivitas dan bisa dipakai untuk tahap berikutnya.
+- Stream GPS/HR aktivitas dipetakan dari titik workout Huawei menjadi `StreamData` dan diringkas oleh engine Kotlin untuk review (split pace, fade, decoupling, zona HR). Tampilan grafik detail stream masih perlu diperdalam.
 - Data historis yang tersedia bergantung pada isi database Huawei; metrik yang tidak tersedia ditampilkan sebagai "—", bukan dibuat-buat.
 - Profil atlet (umur, RHR manual, HRmax, zona) dan pengaturan Coach masih perlu layar editor native tersendiri.
 - Build/test harus dikonfirmasi lewat GitHub Actions sebelum APK dipakai sebagai pengganti produksi.
