@@ -419,6 +419,8 @@ private fun HistoryScreen(s: NativeState?, loadActivityPoints: suspend (Act) -> 
     selected?.let { act ->
         val review = s?.reviews?.get(act.start)
         val climate = s?.climateContexts?.get(act.start)
+        val reserveRest = s?.result?.profile?.rest ?: 0.0
+        val reserveMax = s?.result?.profile?.max?.takeIf { it > 0 } ?: s?.age?.takeIf { it > 0 }?.let { 208.0 - 0.7 * it } ?: 0.0
         var activityPoints by remember(act.lid) { mutableStateOf<List<WatchWorkoutPoint>>(emptyList()) }
         var activityLoading by remember(act.lid) { mutableStateOf(false) }
         var activityError by remember(act.lid) { mutableStateOf<String?>(null) }
@@ -433,7 +435,7 @@ private fun HistoryScreen(s: NativeState?, loadActivityPoints: suspend (Act) -> 
             text = {
                 Column(Modifier.heightIn(max = 520.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ActivityRow(act)
-                    ActivityStreamSummary(activityPoints, activityLoading, activityError, s?.result?.profile?.rest ?: 0.0, s?.result?.profile?.max ?: 0.0)
+                    ActivityStreamSummary(activityPoints, activityLoading, activityError, reserveRest, reserveMax)
                     review?.let {
                         Divider()
                         Text(it.headline ?: "Analisis aktivitas", fontWeight = FontWeight.SemiBold)
