@@ -1,0 +1,56 @@
+name: Import RunNowNative Step 7
+
+on:
+  push:
+    paths:
+      - "runnow-step7.zip"
+      - ".github/workflows/import-step7.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: import-runnow-step7
+  cancel-in-progress: false
+
+jobs:
+  import:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract archive and place files in repository paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f runnow-step7.zip
+          mkdir -p /tmp/runnow-step7
+          unzip -q runnow-step7.zip -d /tmp/runnow-step7
+          SOURCE="/tmp/runnow-step7/RunNowNative-main"
+          test -d "$SOURCE"
+          test -f "$SOURCE/settings.gradle.kts"
+          # Copy the archive's project contents to the repository root.
+          # Keep the existing signing keystore out of this public repository.
+          rsync -a --exclude='app/polarrun.keystore' "$SOURCE/" ./
+          rm -f runnow-step7.zip
+          echo "Imported files:"
+          find . -type f -not -path './.git/*' | sort | wc -l
+          echo "Signing keystore intentionally excluded."
+
+      - name: Commit imported project files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "Import RunNowNative step 7 into project structure"
+          git push
