@@ -1055,6 +1055,9 @@ private fun DataStatus(s: NativeState?) {
         Text(when { s?.synced == true -> "Database Huawei tersedia"; !s?.acts.isNullOrEmpty() -> "Riwayat aktivitas tersimpan"; else -> "Menunggu sinkronisasi pertama" }, fontWeight = FontWeight.SemiBold)
         Text(s?.overview?.lastSampleSec?.let { "Sampel terakhir: " + DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale("id")).withZone(ZoneId.systemDefault()).format(Instant.ofEpochSecond(it)) } ?: "Belum ada sampel harian",
             color = Muted, fontSize = 12.sp)
+        s?.error?.takeIf { it.isNotBlank() }?.let {
+            Text("Catatan pembacaan database Huawei: $it", color = Color(0xFFB3261E), fontSize = 11.sp)
+        }
         s?.error?.let { Text("Catatan pembacaan: $it", color = Color(0xFFB3261E), fontSize = 12.sp) }
     }
 }
