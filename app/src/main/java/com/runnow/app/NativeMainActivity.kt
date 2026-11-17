@@ -610,7 +610,7 @@ private fun HeartRateStreamChart(points: List<WatchWorkoutPoint>) {
     val min = (samples.minOf { it.second } - 5f).coerceAtLeast(30f)
     val max = (samples.maxOf { it.second } + 5f).coerceAtMost(240f)
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("DETak JANTUNG · BPM", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        Text("DETAK JANTUNG · BPM", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
         Canvas(Modifier.fillMaxWidth().height(112.dp)) {
             val span = (max - min).coerceAtLeast(1f)
             val left = 8f
