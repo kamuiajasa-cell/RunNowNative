@@ -18,4 +18,5 @@ dependencies {
     implementation(project(":domain"))
     implementation(project(":huawei"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    testImplementation("junit:junit:4.13.2")
 }
