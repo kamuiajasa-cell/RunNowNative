@@ -15,7 +15,7 @@ import org.json.JSONObject
  *  - workouts: latihan rinci dengan `pts` = `[detikSejakMulai, hr, kecepatan m/s, tinggi, kadens, lat, lon]` (sama dengan icuWk).
  * Blocking: panggil dari thread IO.
  */
-internal object WatchImport {
+object WatchImport {
   private const val MAX_WORKOUTS = 20
   private const val WITH_POINTS = 15
   private const val MAX_POINTS = 300
