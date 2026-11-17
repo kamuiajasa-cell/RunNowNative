@@ -43,7 +43,8 @@ class NativeMainActivity : ComponentActivity() {
         setContent { RunNowNativeApp(
             onPair = { startActivity(Intent(this, PairingActivity::class.java)) },
             onSettings = { startActivity(Intent(this, PairingActivity::class.java)) },
-            onSaveProfile = { age, rest, max, goal -> getSharedPreferences("native_athlete", MODE_PRIVATE).edit().putInt("age", age).putFloat("resting_hr", rest.toFloat()).putFloat("max_hr", max.toFloat()).putString("goal", goal).apply() },
+            onSaveProfile = { age, rest, max, goal -> getSharedPreferences("native_athlete", MODE_PRIVATE).edit().putInt("age", age).putFloat("resting_hr", rest.toFloat()).putFloat("max_hr", max.toFloat()).putString("goal", goal).apply(); NativeSettingsStore(this).save(NativeSettingsStore(this).load().copy(goal = goal)) },
+            onSaveSettings = { settings -> NativeSettingsStore(this).save(settings) },
             load = { NativeDataSource(this).load() },
             syncIntervals = { key -> NativeDataSource(this).syncIntervals(key) },
         ) }
@@ -65,6 +66,7 @@ private data class NativeState(
     val restingHr: Double,
     val maxHr: Double,
     val goal: String,
+    val settings: Settings,
     val intervalsConnected: Boolean,
     val climateContexts: Map<Long, ClimateContext>,
     val climateProfile: PersonalClimateProfile,
@@ -118,7 +120,7 @@ private class NativeDataSource(private val activity: android.content.Context) {
             act.start to climateAdvice(context.conditions, climateProfile, tag, false,
                 comparison?.deltaHr, comparison?.count ?: 0, comparison?.confidence)
         }.toMap()
-        var snap = data.snapshot.copy(settings = data.snapshot.settings.copy(goal = goal))
+        var snap = data.snapshot.copy(settings = NativeSettingsStore(activity).load().copy(goal = goal))
         val acts = snap.acts
         val wellness = snap.wellness
         val process = if (acts.isNotEmpty() || wellness.isNotEmpty()) snap.processData() else null
@@ -126,7 +128,7 @@ private class NativeDataSource(private val activity: android.content.Context) {
         val reviews = acts.filter { it.kind == ActKind.RUN }.associate { it.start to snap.reviewRun(it) }
         NativeState(
             overview, workouts, acts, days, sleep, hrv, process, reviews,
-            data.watchAvailable, data.watchError, age, restingHr, maxHr, goal,
+            data.watchAvailable, data.watchError, age, restingHr, maxHr, goal, snap.settings,
             intervalsKey != null, climateContexts, climateProfile, climateAdviceByStart, climateComparisons,
         )
     }
@@ -145,7 +147,7 @@ private class NativeDataSource(private val activity: android.content.Context) {
 }
 
 @Composable
-private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSaveProfile: (Int, Double, Double, String) -> Unit, load: suspend () -> NativeState, syncIntervals: suspend (String) -> NativeState) {
+private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSaveProfile: (Int, Double, Double, String) -> Unit, onSaveSettings: (Settings) -> Unit, load: suspend () -> NativeState, syncIntervals: suspend (String) -> NativeState) {
     var tab by remember { mutableIntStateOf(0) }
     var state by remember { mutableStateOf<NativeState?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -192,7 +194,7 @@ private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSavePr
                     0 -> TodayScreen(s, onPair)
                     1 -> HistoryScreen(s)
                     2 -> AnalysisScreen(s)
-                    else -> ProfileScreen(s, onPair, onSettings, onSyncIntervals = { key ->
+                    else -> ProfileScreen(s, onPair, onSettings, onSaveSettings, onSyncIntervals = { key ->
                         scope.launch {
                             busy = true
                             try { state = syncIntervals(key); failure = null }
@@ -453,61 +455,205 @@ private fun AnalysisScreen(s: NativeState?) {
 }
 
 @Composable
-private fun ProfileScreen(s: NativeState?, onPair: () -> Unit, onSettings: () -> Unit, onSyncIntervals: (String) -> Unit, onSaveProfile: (Int, Double, Double, String) -> Unit) {
+private fun ProfileScreen(
+    s: NativeState?,
+    onPair: () -> Unit,
+    onSettings: () -> Unit,
+    onSaveSettings: (Settings) -> Unit,
+    onSyncIntervals: (String) -> Unit,
+    onSaveProfile: (Int, Double, Double, String) -> Unit,
+) {
+    var page by remember { mutableStateOf("Menu") }
     var age by remember(s?.age) { mutableStateOf(if ((s?.age ?: 0) > 0) s!!.age.toString() else "") }
     var rest by remember(s?.restingHr) { mutableStateOf(if ((s?.restingHr ?: 0.0) > 0) s!!.restingHr.toInt().toString() else "") }
     var max by remember(s?.maxHr) { mutableStateOf(if ((s?.maxHr ?: 0.0) > 0) s!!.maxHr.toInt().toString() else "") }
     var goal by remember(s?.goal) { mutableStateOf(s?.goal ?: "5K") }
     var intervalsKey by remember { mutableStateOf("") }
-    LazyColumn(contentPadding = PaddingValues(horizontal = 18.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    var settings by remember(s?.settings) { mutableStateOf(s?.settings ?: Settings()) }
+    var runSecs by remember(settings.rw) { mutableStateOf(settings.rw.run.toString()) }
+    var walkSecs by remember(settings.rw) { mutableStateOf(settings.rw.walk.toString()) }
+    var lthr by remember(settings.athlete) { mutableStateOf(settings.athlete.lthr.takeIf { it > 0 }?.toString() ?: "") }
+    var ltPace by remember(settings.athlete) { mutableStateOf(settings.athlete.ltPace) }
+    val pages = listOf(
+        "Data atlet" to "Usia, RHR, dan HRmax",
+        "Ambang & zona" to "LTHR dan LTPace",
+        "Sasaran" to "Target dan lomba",
+        "Rencana mingguan" to "Jadwal sesi latihan",
+        "Pendampingan" to "Gaya coach dan sinyal kaki",
+        "Lari-jalan" to "Interval lari dan jalan",
+        "Perangkat & sinkronisasi" to "Huawei Watch dan Intervals.icu",
+        "Data & privasi" to "Penyimpanan dan sumber data",
+    )
+    LazyColumn(contentPadding = PaddingValues(horizontal = 18.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            SurfaceCard {
-                Text("PROFIL ATLET", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                Text("Kalibrasi analisis", fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                Text("Isi hanya nilai yang kamu ketahui. Kosongkan RHR atau HRmax bila belum yakin.", color = Muted, fontSize = 12.sp)
-                OutlinedTextField(value = age, onValueChange = { age = it.filter(Char::isDigit).take(3) }, label = { Text("Usia (tahun)") }, singleLine = true)
-                OutlinedTextField(value = rest, onValueChange = { rest = it.filter(Char::isDigit).take(3) }, label = { Text("RHR manual (bpm, opsional)") }, singleLine = true)
-                OutlinedTextField(value = max, onValueChange = { max = it.filter(Char::isDigit).take(3) }, label = { Text("HRmax (bpm, opsional)") }, singleLine = true)
-                Text("Target utama", color = Muted, fontSize = 12.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("5K", "10K", "Half", "Marathon", "Umum").forEach { item ->
-                        FilterChip(selected = goal == item, onClick = { goal = item }, label = { Text(item) })
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                if (page != "Menu") TextButton(onClick = { page = "Menu" }) { Text("‹ Profil") }
+                Text(if (page == "Menu") "PROFIL ATLET" else page.uppercase(), color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        if (page == "Menu") {
+            item {
+                SurfaceCard {
+                    Text("RunNow", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Text("Target ${s?.goal ?: "5K"} · ${if (s?.intervalsConnected == true) "Intervals.icu terhubung" else "Belum ada koneksi Intervals.icu"}", color = Muted, fontSize = 12.sp)
+                    Text("Atur parameter atlet dan cara coach menyusun latihan.", color = Muted, fontSize = 12.sp)
+                }
+            }
+            items(pages) { (title, subtitle) ->
+                SurfaceCard {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(title, fontWeight = FontWeight.SemiBold)
+                            Text(subtitle, color = Muted, fontSize = 12.sp)
+                        }
+                        TextButton(onClick = { page = title }) { Text("Buka ›") }
                     }
                 }
-                Button(onClick = { onSaveProfile(age.toIntOrNull() ?: 0, rest.toDoubleOrNull() ?: 0.0, max.toDoubleOrNull() ?: 0.0, goal) },
-                    colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("Simpan profil") }
             }
-        }
-        item {
-            SurfaceCard {
-                Text("SUMBER DATA", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                Text(if (s?.synced == true) "Huawei Watch terdeteksi" else "Jam belum tersinkron", fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                Text("${s?.overview?.workouts ?: 0} aktivitas · ${s?.overview?.hrSamples ?: 0} sampel HR · ${s?.overview?.hrvReadings ?: 0} pengukuran HRV",
-                    color = Muted, fontSize = 13.sp)
-                Button(onClick = onPair, colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("Kelola koneksi jam") }
-            }
-        }
-        item {
-            SurfaceCard {
-                Text("INTERVALS.ICU", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                Text(if (s?.intervalsConnected == true) "Akun terhubung" else "Hubungkan sumber latihan", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Text(if (s?.intervalsConnected == true) "Kunci API tersimpan terenkripsi di Android Keystore. Masukkan kunci baru hanya jika ingin menggantinya." else "Aktivitas, beban latihan, dan wellness dapat disinkronkan dari Intervals.icu.", color = Muted, fontSize = 12.sp)
-                OutlinedTextField(value = intervalsKey, onValueChange = { intervalsKey = it }, label = { Text("API key Intervals.icu") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
-                Button(onClick = { if (intervalsKey.isNotBlank()) { val key = intervalsKey; intervalsKey = ""; onSyncIntervals(key) } },
-                    enabled = intervalsKey.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = Ink)) {
-                    Text("Simpan & sinkronkan")
+        } else when (page) {
+            "Data atlet" -> {
+                item {
+                    SurfaceCard {
+                        Text("PARAMETER DASAR", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        OutlinedTextField(value = age, onValueChange = { age = it.filter(Char::isDigit).take(3) }, label = { Text("Usia (tahun)") }, singleLine = true)
+                        OutlinedTextField(value = rest, onValueChange = { rest = it.filter(Char::isDigit).take(3) }, label = { Text("RHR manual (bpm, opsional)") }, singleLine = true)
+                        OutlinedTextField(value = max, onValueChange = { max = it.filter(Char::isDigit).take(3) }, label = { Text("HRmax (bpm, opsional)") }, singleLine = true)
+                        Text("Kosongkan nilai yang tidak diketahui. Nilai kosong tidak diperlakukan sebagai nol oleh antarmuka.", color = Muted, fontSize = 11.sp)
+                        Button(onClick = { onSaveProfile(age.toIntOrNull() ?: 0, rest.toDoubleOrNull() ?: 0.0, max.toDoubleOrNull() ?: 0.0, goal) }) { Text("Simpan data atlet") }
+                    }
                 }
             }
-        }
-        item {
-            SurfaceCard {
-                Text("PERANGKAT", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                if (s?.overview?.devices.isNullOrEmpty()) Text("Belum ada perangkat tersimpan.", color = Muted)
-                s?.overview?.devices.orEmpty().forEach { Text("${it.name} · ${it.model ?: "Huawei"}", fontWeight = FontWeight.SemiBold) }
-                TextButton(onClick = onSettings) { Text("Pengaturan perangkat dan aplikasi") }
+            "Ambang & zona" -> {
+                item {
+                    SurfaceCard {
+                        Text("AMBANG LATIHAN", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        OutlinedTextField(value = lthr, onValueChange = { lthr = it.filter(Char::isDigit).take(3) }, label = { Text("LTHR manual (bpm)") }, singleLine = true)
+                        OutlinedTextField(value = ltPace, onValueChange = { ltPace = it.take(12) }, label = { Text("LTPace (mm:ss/km)") }, singleLine = true)
+                        Text("Isi hanya jika memiliki hasil tes atau estimasi yang cukup tepercaya. Kosongkan untuk memakai estimasi otomatis.", color = Muted, fontSize = 11.sp)
+                        Button(onClick = {
+                            settings = settings.copy(athlete = AthleteSettings(lthr.toIntOrNull() ?: 0, ltPace.trim()))
+                            onSaveSettings(settings)
+                        }) { Text("Simpan ambang") }
+                    }
+                }
             }
+            "Sasaran" -> {
+                item {
+                    SurfaceCard {
+                        Text("TARGET UTAMA", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf("5K", "10K", "Half", "Marathon", "Umum").forEach { item ->
+                                FilterChip(selected = goal == item, onClick = { goal = item }, label = { Text(item) })
+                            }
+                        }
+                        OutlinedTextField(value = settings.race, onValueChange = { settings = settings.copy(race = it.take(10)) }, label = { Text("Tanggal lomba (YYYY-MM-DD, opsional)") }, singleLine = true)
+                        OutlinedTextField(value = settings.raceGoal, onValueChange = { settings = settings.copy(raceGoal = it.take(8)) }, label = { Text("Target waktu (opsional)") }, singleLine = true)
+                        Button(onClick = {
+                            settings = settings.copy(goal = goal)
+                            onSaveProfile(age.toIntOrNull() ?: 0, rest.toDoubleOrNull() ?: 0.0, max.toDoubleOrNull() ?: 0.0, goal)
+                            onSaveSettings(settings)
+                        }) { Text("Simpan sasaran") }
+                    }
+                }
+            }
+            "Rencana mingguan" -> {
+                item {
+                    SurfaceCard {
+                        Text("JADWAL MINGGUAN", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        listOf(1 to "Senin", 2 to "Selasa", 3 to "Rabu", 4 to "Kamis", 5 to "Jumat", 6 to "Sabtu", 0 to "Minggu").forEach { (day, label) ->
+                            val selected = settings.plan[day] ?: PlanDay("auto", 0.0)
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(label, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    listOf("auto", "easy", "quality", "long", "rest").forEach { type ->
+                                        FilterChip(selected = selected.t == type, onClick = {
+                                            settings = settings.copy(plan = settings.plan + (day to selected.copy(t = type)))
+                                        }, label = { Text(when(type) { "auto" -> "Auto"; "easy" -> "Santai"; "quality" -> "Kualitas"; "long" -> "Jauh"; else -> "Rest" }) })
+                                    }
+                                }
+                            }
+                            Divider(color = Surface)
+                        }
+                        Button(onClick = { onSaveSettings(settings) }) { Text("Simpan rencana") }
+                    }
+                }
+            }
+            "Pendampingan" -> {
+                item {
+                    SurfaceCard {
+                        Text("GAYA COACH", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        listOf("conservative" to "Konservatif", "moderate" to "Moderat", "aggressive" to "Agresif").forEach { (value, label) ->
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = settings.style == value, onClick = { settings = settings.copy(style = value) })
+                                Column {
+                                    Text(label, fontWeight = FontWeight.SemiBold)
+                                    Text(when(value) { "conservative" -> "Lebih mengutamakan pemulihan dan kenaikan beban bertahap."; "moderate" -> "Menyeimbangkan stimulus dan pemulihan."; else -> "Lebih menantang, perlu toleransi beban dan pemulihan yang baik." }, color = Muted, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                        Button(onClick = { onSaveSettings(settings) }) { Text("Simpan preferensi") }
+                    }
+                }
+            }
+            "Lari-jalan" -> {
+                item {
+                    SurfaceCard {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Pola lari-jalan", fontWeight = FontWeight.SemiBold)
+                                Text("Coach dapat menyusun sesi interval lari dan jalan.", color = Muted, fontSize = 11.sp)
+                            }
+                            Switch(checked = settings.rw.on, onCheckedChange = { settings = settings.copy(rw = settings.rw.copy(on = it)) })
+                        }
+                        OutlinedTextField(value = runSecs, onValueChange = { runSecs = it.filter(Char::isDigit).take(4) }, label = { Text("Durasi lari (detik)") }, singleLine = true)
+                        OutlinedTextField(value = walkSecs, onValueChange = { walkSecs = it.filter(Char::isDigit).take(4) }, label = { Text("Durasi jalan (detik)") }, singleLine = true)
+                        Button(onClick = {
+                            val run = (runSecs.toIntOrNull() ?: 225).coerceIn(30, 1800)
+                            val walk = (walkSecs.toIntOrNull() ?: 30).coerceIn(10, 600)
+                            settings = settings.copy(rw = RunWalkSettings(settings.rw.on, run, walk))
+                            onSaveSettings(settings)
+                        }) { Text("Simpan pola") }
+                    }
+                }
+            }
+            "Perangkat & sinkronisasi" -> {
+                item {
+                    SurfaceCard {
+                        Text(if (s?.synced == true) "Huawei Watch terdeteksi" else "Jam belum tersinkron", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text("${s?.overview?.workouts ?: 0} aktivitas · ${s?.overview?.hrSamples ?: 0} sampel HR · ${s?.overview?.hrvReadings ?: 0} pengukuran HRV", color = Muted, fontSize = 12.sp)
+                        Button(onClick = onPair) { Text("Kelola koneksi jam") }
+                    }
+                }
+                item {
+                    SurfaceCard {
+                        Text("INTERVALS.ICU", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text(if (s?.intervalsConnected == true) "Akun terhubung" else "Hubungkan sumber latihan", fontWeight = FontWeight.Bold)
+                        Text("Kunci API disimpan terenkripsi di Android Keystore. Masukkan kunci baru hanya untuk mengganti.", color = Muted, fontSize = 11.sp)
+                        OutlinedTextField(value = intervalsKey, onValueChange = { intervalsKey = it }, label = { Text("API key Intervals.icu") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
+                        Button(onClick = { if (intervalsKey.isNotBlank()) { val key = intervalsKey; intervalsKey = ""; onSyncIntervals(key) } }, enabled = intervalsKey.isNotBlank()) { Text("Simpan & sinkronkan") }
+                    }
+                }
+                item {
+                    SurfaceCard {
+                        Text("PERANGKAT TERDETEKSI", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        if (s?.overview?.devices.isNullOrEmpty()) Text("Belum ada perangkat tersimpan.", color = Muted)
+                        s?.overview?.devices.orEmpty().forEach { Text("${it.name} · ${it.model ?: "Huawei"}", fontWeight = FontWeight.SemiBold) }
+                        TextButton(onClick = onSettings) { Text("Pengaturan perangkat dan aplikasi") }
+                    }
+                }
+            }
+            "Data & privasi" -> {
+                item {
+                    SurfaceCard {
+                        Text("PENYIMPANAN LOKAL", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text("Aktivitas, ringkasan stream, wellness, dan konteks cuaca disimpan di perangkat agar riwayat tidak bertambah ganda saat sinkronisasi diulang.", fontSize = 12.sp)
+                        Text("API key Intervals.icu disimpan terenkripsi menggunakan Android Keystore.", color = Muted, fontSize = 12.sp)
+                        Text("Sumber: Huawei Watch dan Intervals.icu. RunNow tidak merekam aktivitas GPS dari ponsel pada alur ini.", color = Muted, fontSize = 12.sp)
+                    }
+                }
+            }
+            else -> item { Text("Bagian belum tersedia.", color = Muted) }
         }
-        item { DataStatus(s) }
     }
 }
 
