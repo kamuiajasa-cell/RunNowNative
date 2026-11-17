@@ -239,7 +239,7 @@ private fun HistoryScreen(s: NativeState?) {
         items(s?.workouts.orEmpty(), key = { it.id }) { w ->
             SurfaceCard {
                 WorkoutRow(w)
-                val act = s?.acts?.firstOrNull { it.icuId == w.id.toString() }
+                val act = s?.acts?.firstOrNull { it.icuId == "hw${w.id}" || it.icuId == w.id.toString() }
                 val review = s?.reviews?.get(act?.start)
                 if (review != null) review.headline?.let { headline ->
                     Divider(color = Surface)
