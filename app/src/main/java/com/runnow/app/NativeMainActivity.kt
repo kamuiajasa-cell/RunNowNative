@@ -41,7 +41,7 @@ class NativeMainActivity : ComponentActivity() {
         setContent { RunNowNativeApp(
             onPair = { startActivity(Intent(this, PairingActivity::class.java)) },
             onSettings = { startActivity(Intent(this, SettingsActivity::class.java)) },
-            onSaveProfile = { age, rest, max, goal -> getSharedPreferences("native_athlete", MODE_PRIVATE).edit().putInt("age", age).putFloat("resting_hr", rest.toFloat()).putFloat("max_hr", max.toFloat()).putString("goal", goal).apply(); scope.launch { refresh() } },
+            onSaveProfile = { age, rest, max, goal -> getSharedPreferences("native_athlete", MODE_PRIVATE).edit().putInt("age", age).putFloat("resting_hr", rest.toFloat()).putFloat("max_hr", max.toFloat()).putString("goal", goal).apply() },
             load = { NativeDataSource(this).load() },
         ) }
     }
@@ -192,7 +192,7 @@ private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSavePr
                     0 -> TodayScreen(s, onPair)
                     1 -> HistoryScreen(s)
                     2 -> AnalysisScreen(s)
-                    else -> ProfileScreen(s, onPair, onSettings, onSaveProfile)
+                    else -> ProfileScreen(s, onPair, onSettings) { age, rest, max, goal -> onSaveProfile(age, rest, max, goal); scope.launch { refresh() } }
                 }
             }
         }
