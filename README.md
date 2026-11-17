@@ -1,174 +1,24 @@
-# RunNow Native
+# RunNow Native Kotlin
 
-Aplikasi Android **RunNow** yang berfungsi sebagai cangkang WebView untuk aplikasi HTML RunNow2. Android native (Kotlin) memuat URL HTTPS RunNow2 sebagai halaman utama, lalu menyediakan bridge ke fitur Android dan integrasi perangkat wearable Huawei/Honor. Layar pengaturan perangkat tertentu tetap menggunakan aset HTML lokal.
+Migrasi aplikasi RunSense ke aplikasi Android native Kotlin/Jetpack Compose. Nama produk tetap RunNow.
 
-> **Status proyek:** dalam pengembangan. Keberhasilan kompilasi bukan bukti bahwa seluruh fitur Bluetooth, sinkronisasi, dan notifikasi sudah teruji pada perangkat fisik.
+## Status migrasi
+- `:domain` adalah engine Kotlin murni: kapasitas, beban, readiness/autonomic, Coach, rencana, review aktivitas dan ringkasan stream.
+- Launcher native menggunakan Jetpack Compose dan empat tab: Hari Ini, Riwayat, Analisis, Profil.
+- Data dibaca langsung dari database lokal Huawei Core melalui `WatchData`; tidak bergantung pada URL Cloudflare untuk UI utama.
+- Aktivitas dipetakan ke model domain dan diproses oleh `Snapshot.processData()`; review aktivitas memakai `Snapshot.reviewRun()`.
+- Layar pairing/pengaturan Huawei lama dipertahankan agar fungsi koneksi yang sudah ada tidak hilang.
 
-## Gambaran arsitektur
+## Batasan tahap ini
+- Migrasi UI dan alur data utama sudah dimulai, tetapi belum semua halaman/detail dan seluruh grafik HTML dipindahkan.
+- Stream GPS/HR detail belum dipetakan ke `StreamData` pada layar detail. Lapisan Huawei menyimpan titik aktivitas dan bisa dipakai untuk tahap berikutnya.
+- Data historis yang tersedia bergantung pada isi database Huawei; metrik yang tidak tersedia ditampilkan sebagai "—", bukan dibuat-buat.
+- Profil atlet (umur, RHR manual, HRmax, zona) dan pengaturan Coach masih perlu layar editor native tersendiri.
+- Build/test harus dikonfirmasi lewat GitHub Actions sebelum APK dipakai sebagai pengganti produksi.
 
-```text
-Android app (Kotlin)
-├── MainActivity
-│   └── WebView → URL RunNow2 (ServerConfig.DEFAULT_URL)
-├── SettingsActivity
-│   └── WebView → app/src/main/assets/pengaturan.html
-├── RunNowBridge
-│   └── RPC dari JavaScript ke Huawei core
-└── huawei (Android library)
-    └── koneksi Bluetooth LE, pengelolaan perangkat, dan sinkronisasi
-```
-
-Halaman utama dimuat langsung dari URL HTTPS yang tersimpan di **Pengaturan > Alamat server** (bawaan: `https://runnow2.kamui-aja-sa.workers.dev`). `WebViewAssetLoader` pada origin `https://runnow.local` dipakai untuk halaman pengaturan lokal, bukan sebagai pengganti halaman utama. Penyimpanan dan antarmuka aplikasi utama dikelola oleh situs RunNow2.
-
-## Fitur dan integrasi
-
-### Aplikasi RunNow
-- Halaman utama berasal dari URL server yang diatur melalui `ServerConfig`; URL bawaan adalah `https://runnow2.kamui-aja-sa.workers.dev`.
-- Halaman pengaturan native berada di `app/src/main/assets/pengaturan.html` dan dibuka melalui `SettingsActivity`.
-- Navigasi layar native ditangani melalui `Routes.kt`.
-- Pengingat rencana latihan dijadwalkan Android dan dapat dijadwalkan ulang setelah perangkat dimulai ulang.
-
-### Integrasi Huawei/Honor
-Modul `huawei/` menyediakan fondasi koneksi dan komunikasi dengan wearable. Jembatan `RunNowBridge.kt` mengekspos metode RPC yang diizinkan, antara lain:
-
-- Koneksi perangkat, sinkronisasi aktivitas, sinkronisasi riwayat, dan pembaruan data latihan.
-- Profil pengguna serta pengaturan zona detak jantung (metode HR maksimum dan HRR).
-- Detak jantung langsung dan pengukuran HRV.
-- Pengaturan sensor kesehatan, termasuk detak jantung otomatis, SpO₂, TruSleep, dan peringatan detak.
-- Status dan pengaturan sinkronisasi latar belakang.
-- Cuaca pada jam.
-- Akses notifikasi ponsel, ringkasan pagi, fitur panggilan, dan Find My Phone.
-- Laporan dukungan dan pengelolaan perangkat yang tersimpan.
-
-Ketersediaan setiap fitur bergantung pada model jam, firmware, izin Android, dan dukungan protokol perangkat. Jangan menganggap semua fitur telah tervalidasi pada setiap model.
-
-## Cara kerja JavaScript bridge
-
-Halaman web menggunakan pola RPC yang sudah dipakai oleh kode Run Now:
-
-1. JavaScript mengirim `postMessage({type: "rpc", id, method, args})` melalui `window.ReactNativeWebView`.
-2. Android menerima pesan melalui `RunNowBridge`, memeriksa nama metode dan argumennya, lalu menjalankan fungsi yang terdaftar.
-3. Hasil dikirim kembali ke halaman melalui `window.__rn(id, ok, value)`.
-
-Objek JavaScript `Android` terpisah digunakan untuk fungsi Android tertentu, termasuk penjadwalan pengingat latihan. Jangan menambahkan metode bridge tanpa validasi argumen dan pembatasan metode yang boleh dipanggil.
-
-## Nama, ikon, splash, dan badge dari server
-
-Aplikasi membaca `manifest.webmanifest` dari URL yang dimuat layar utama (Pengaturan > Alamat server), lalu menyimpannya di cache perangkat (`BrandConfig.kt`):
-
-| Elemen | Sumber di server | Dipakai untuk |
-|---|---|---|
-| Nama | `name` / `short_name` | splash, layar Recents, pintasan |
-| Ikon | `icons` (terbesar, bukan monochrome) | splash, layar Recents, pintasan |
-| Splash | kunci `splash` (URL gambar), cadangan: ikon; warna latar dari `background_color` | splash dalam aplikasi saat halaman dimuat |
-| Badge | kunci `badge` (URL gambar), atau ikon `purpose: monochrome`, atau `badge-96.png` | ikon kecil notifikasi (pengingat latihan dan rekam lari) |
-| Warna aksen | `theme_color` | warna notifikasi dan layar Recents |
-
-Badge harus PNG dengan latar transparan (Android hanya memakai kanal alfa); kalau tidak, dipakai ikon bawaan. Cache diperbarui paling cepat tiap 12 jam, atau lewat tombol **Ambil ulang dari server** di Pengaturan > Alamat server.
-
-Batasan Android: ikon peluncur dan nama di daftar aplikasi dibuat dari `AndroidManifest.xml` saat APK dipasang dan tidak bisa diubah dari dalam aplikasi. Untuk itu tersedia tombol **Pasang pintasan di layar utama** yang membuat pintasan bernama dan berikon dari server. Splash sistem Android 12+ (sebelum aplikasi tampil) tetap memakai ikon bawaan APK; splash dari server tampil tepat setelahnya.
-
-## Teknologi
-
-| Komponen | Versi / konfigurasi |
-|---|---|
-| Bahasa | Kotlin |
-| Android Gradle Plugin | 8.9.1 |
-| Kotlin | 2.0.20 |
-| Gradle pada CI | 8.11.1 |
-| Java target | 17 |
-| Compile SDK | 36 |
-| Target SDK | 34 |
-| Minimum SDK | 29 (Android 10) |
-| UI native | Android WebView dan AndroidX Compose Material 3 |
-| WebView asset origin | `https://runnow.local` |
-
-## Build APK
-
-### GitHub Actions
-
-1. Buka tab **Actions** pada repository.
-2. Pilih workflow **Build APK**.
-3. Jalankan **Run workflow**, atau gunakan workflow yang berjalan otomatis saat ada push ke `main` atau `master`.
-4. Setelah job berhasil, unduh artifact **RunNow-debug-apk**.
-5. Pasang APK pada perangkat Android yang memenuhi minimum SDK.
-
-Workflow menjalankan `gradle assembleDebug --no-daemon` dan mengunggah:
-
-`app/build/outputs/apk/debug/app-debug.apk`
-
-### GitHub Codespaces
-
-1. Buka repository di Codespaces dengan lingkungan yang memiliki ruang dan memori memadai.
-2. Tunggu proses `.devcontainer/setup.sh` menyiapkan Android SDK dan Gradle.
-3. Jalankan:
-
+## Build
 ```bash
-gradle assembleDebug --no-daemon
+gradle :domain:test assembleDebug
 ```
 
-APK debug akan tersedia di:
-
-```text
-app/build/outputs/apk/debug/app-debug.apk
-```
-
-Build di Codespaces hanya memeriksa proses kompilasi. Pengujian Bluetooth LE, pairing, sinkronisasi, izin, dan perilaku latar belakang tetap harus dilakukan pada ponsel dan jam fisik.
-
-## Pengujian perangkat yang perlu dilakukan
-
-- Instalasi dan pembukaan aplikasi pada Android 10 atau lebih baru.
-- Pairing dan koneksi ulang jam Huawei/Honor.
-- Sinkronisasi aktivitas terbaru dan riwayat.
-- Pengiriman detak jantung langsung dan pengukuran HRV.
-- Pengaturan sensor, zona detak jantung, dan bahasa jam.
-- Sinkronisasi latar belakang setelah izin diberikan.
-- Notifikasi dan fitur telepon sesuai izin yang disetujui pengguna.
-- Pengingat latihan saat aplikasi ditutup dan setelah ponsel dimulai ulang.
-- Impor/ekspor berkas serta navigasi antarhalaman.
-
-Catat model jam, versi firmware, versi Android, langkah reproduksi, dan log ketika melaporkan masalah.
-
-## Struktur direktori
-
-```text
-.
-├── .devcontainer/             # Konfigurasi lingkungan Codespaces
-├── .github/workflows/         # Otomatisasi build APK
-├── app/
-│   └── src/main/
-│       ├── assets/
-│       │   ├── index.html     # Antarmuka utama Run Now
-│       │   └── pengaturan.html
-│       ├── java/com/runnow/app/
-│       │   ├── MainActivity.kt
-│       │   ├── BridgeActivity.kt
-│       │   ├── AndroidBridge.kt
-│       │   ├── PairingActivity.kt
-│       │   ├── SettingsActivity.kt
-│       │   ├── WatchScreen.kt
-│       │   ├── PlanNotifier.kt
-│       │   └── Routes.kt
-│       └── AndroidManifest.xml
-├── huawei/                    # Library integrasi wearable
-│   ├── src/main/
-│   ├── LICENSE
-│   └── NOTICE
-├── build.gradle.kts
-├── settings.gradle.kts
-└── README.md
-```
-
-## Lisensi dan atribusi
-
-Modul `huawei/` berasal dari proyek JoyoFit dan berlisensi **GNU Affero General Public License v3.0 atau yang lebih baru (AGPL-3.0-or-later)**, sebagai turunan Gadgetbridge. Baca `huawei/LICENSE` dan `huawei/NOTICE` untuk teks lisensi dan atribusi.
-
-Distribusi aplikasi yang memuat modul tersebut harus mematuhi kewajiban AGPL yang berlaku, termasuk menyediakan source code yang sesuai kepada penerima distribusi. Tinjau juga lisensi dan kewajiban untuk setiap dependensi pihak ketiga.
-
-## Keamanan distribusi
-
-Jangan menyimpan keystore rilis, kata sandi signing, token, atau kredensial di repository. Karena repository ini bersifat publik dan riwayat Git dapat mempertahankan berkas yang pernah di-commit, setiap signing key yang pernah terekspos harus dianggap tidak rahasia: rotasi kunci dan pindahkan proses signing ke GitHub Actions Secrets atau penyimpanan aman sebelum menerbitkan rilis. Jangan gunakan konfigurasi signing pengembangan untuk distribusi produksi.
-
-## Kontribusi dan pelaporan masalah
-
-Sebelum mengirim perubahan, jalankan build debug dan uji alur yang terdampak pada perangkat fisik bila perubahan menyentuh Bluetooth, sensor, notifikasi, atau proses latar belakang. Sertakan ringkasan perubahan dan hasil pengujian pada pull request.
+APK: `app/build/outputs/apk/debug/app-debug.apk`
