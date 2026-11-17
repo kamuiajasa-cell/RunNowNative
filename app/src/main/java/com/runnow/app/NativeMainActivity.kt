@@ -201,8 +201,8 @@ private class NativeDataSource(private val activity: android.content.Context) {
             rest = rest, max = prefs.getFloat("max_hr", 0f).toDouble(),
             age = prefs.getInt("age", 0), restManual = rest > 0,
         )
-        com.runnow.data.IntervalsCredentialStore(activity).save(apiKey)
         val report = com.runnow.data.RunNowRepository(activity).syncIntervals(apiKey, profile).second
+        com.runnow.data.IntervalsCredentialStore(activity).save(apiKey)
         load().copy(syncMessage = "Intervals.icu: ${report.received} aktivitas diterima · ${report.addedOrUpdated} ditambah/diperbarui · ${report.duplicatesCollapsed} duplikat digabung")
     }
 }
