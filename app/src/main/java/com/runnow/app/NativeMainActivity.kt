@@ -354,7 +354,7 @@ private fun HistoryScreen(s: NativeState?, loadWorkoutPoints: suspend (Long) -> 
             text = {
                 Column(Modifier.heightIn(max = 520.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     WorkoutRow(w)
-                    ActivityStreamSummary(w, stream, streamLoading, streamError)
+                    ActivityStreamSummary(w, stream, streamLoading, streamError, s?.restingHr ?: 0.0, s?.maxHr ?: 0.0)
                     review?.let {
                         Divider()
                         Text(it.headline ?: "Analisis aktivitas", fontWeight = FontWeight.SemiBold)
@@ -378,7 +378,7 @@ private fun HistoryScreen(s: NativeState?, loadWorkoutPoints: suspend (Long) -> 
 }
 
 @Composable
-private fun ActivityStreamSummary(w: WatchWorkout, points: List<WatchWorkoutPoint>, loading: Boolean, error: String?) {
+private fun ActivityStreamSummary(w: WatchWorkout, points: List<WatchWorkoutPoint>, loading: Boolean, error: String?, restingHr: Double, maxHr: Double) {
     Divider()
     Text("REKAMAN AKTIVITAS", fontWeight = FontWeight.SemiBold)
     if (loading) {
@@ -402,13 +402,86 @@ private fun ActivityStreamSummary(w: WatchWorkout, points: List<WatchWorkoutPoin
             val avg = hr.average()
             Metric("HR rata-rata / rentang", "${avg.toInt()} bpm · ${hr.minOrNull()}–${hr.maxOrNull()}")
             HeartRateStreamChart(points)
+            if (restingHr > 0 && maxHr > restingHr) HeartRateZones(hr, restingHr, maxHr)
         } else Text("Rekaman detak jantung tidak cukup untuk membuat grafik.", color = Muted, fontSize = 12.sp)
+        val splits = gpsPaceSplits(points)
+        if (splits.isNotEmpty()) {
+            Divider()
+            Text("SPLIT GPS", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            splits.forEachIndexed { index, seconds ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("KM ${index + 1}", fontSize = 12.sp)
+                    Text(String.format(Locale.US, "%d:%02d /km", seconds / 60, seconds % 60), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+            Text("Split dihitung dari lintasan GPS yang valid; segmen dengan jeda atau lonjakan GPS diabaikan.", color = Muted, fontSize = 10.sp)
+        }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Metric("Cadence rata-rata", cadence.takeIf { it.isNotEmpty() }?.let { "${it.average().toInt()} spm" } ?: "—")
             Metric("Elevasi", if (altitude.size >= 2) "${altitude.minOrNull()!!.toInt()}–${altitude.maxOrNull()!!.toInt()} m" else "—")
         }
         Text("Grafik memakai sampel HR asli yang tersimpan; titik kosong tidak diinterpolasi.", color = Muted, fontSize = 10.sp)
     }
+}
+
+@Composable
+private fun HeartRateZones(values: List<Int>, restingHr: Double, maxHr: Double) {
+    val zones = IntArray(5)
+    values.forEach { hr ->
+        val reserve = (hr - restingHr) / (maxHr - restingHr)
+        val index = when { reserve < .60 -> 0; reserve < .70 -> 1; reserve < .80 -> 2; reserve < .90 -> 3; else -> 4 }
+        zones[index]++
+    }
+    val total = zones.sum().coerceAtLeast(1)
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text("DISTRIBUSI ZONA HRR", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        zones.forEachIndexed { index, count ->
+            val pct = count * 100f / total
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Z${index + 1}", modifier = Modifier.width(22.dp), fontSize = 11.sp, color = Muted)
+                Box(Modifier.weight(1f).height(7.dp).background(Color(0xFFE8ECE6), RoundedCornerShape(8.dp))) {
+                    Box(Modifier.fillMaxWidth(pct / 100f).fillMaxHeight().background(Ink, RoundedCornerShape(8.dp)))
+                }
+                Text("${pct.toInt()}%", modifier = Modifier.width(34.dp), fontSize = 11.sp, color = Ink)
+            }
+        }
+        Text("Persentase memakai HRR dari RHR dan HRmax profil. Sampel HR yang tidak valid diabaikan.", color = Muted, fontSize = 10.sp)
+    }
+}
+
+private fun gpsPaceSplits(points: List<WatchWorkoutPoint>): List<Int> {
+    val gps = points.filter { it.lat != null && it.lon != null }
+    if (gps.size < 2) return emptyList()
+    fun distance(a: WatchWorkoutPoint, b: WatchWorkoutPoint): Double {
+        val lat1 = Math.toRadians(a.lat!!); val lat2 = Math.toRadians(b.lat!!)
+        val dLat = lat2 - lat1; val dLon = Math.toRadians(b.lon!! - a.lon!!)
+        val h = kotlin.math.sin(dLat / 2).let { it * it } +
+            kotlin.math.cos(lat1) * kotlin.math.cos(lat2) * kotlin.math.sin(dLon / 2).let { it * it }
+        return 6371000.0 * 2 * kotlin.math.asin(kotlin.math.sqrt(h.coerceIn(0.0, 1.0)))
+    }
+    val first = gps.first().tsSec
+    var cumulative = 0.0
+    var previous = gps.first()
+    val splits = mutableListOf<Int>()
+    var nextKm = 1000.0
+    for (point in gps.drop(1)) {
+        val dt = point.tsSec - previous.tsSec
+        val segment = distance(previous, point)
+        if (dt in 1..20 && segment in 0.5..(dt * 12.0)) {
+            val before = cumulative
+            cumulative += segment
+            while (cumulative >= nextKm) {
+                val fraction = ((nextKm - before) / segment).coerceIn(0.0, 1.0)
+                val elapsed = (previous.tsSec - first) + dt * fraction
+                val priorElapsed = if (splits.isEmpty()) 0.0 else splits.sum().toDouble()
+                val splitSeconds = (elapsed - priorElapsed).toInt()
+                if (splitSeconds in 120..1200) splits.add(splitSeconds)
+                nextKm += 1000.0
+            }
+        }
+        previous = point
+    }
+    return splits
 }
 
 @Composable
