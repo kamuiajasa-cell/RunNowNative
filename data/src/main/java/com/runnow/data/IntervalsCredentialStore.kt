@@ -25,8 +25,9 @@ class IntervalsCredentialStore(context: Context) {
     }
 
     fun read(): String? = runCatching {
-        val packed = Base64.decode(prefs.getString("intervals_key", null), Base64.NO_WRAP)
-        require(packed.size > 12)
+        val encoded = prefs.getString("intervals_key", null) ?: return null
+        val packed = Base64.decode(encoded, Base64.NO_WRAP)
+        require(packed.size > 28)
         val iv = packed.copyOfRange(0, 12)
         val encrypted = packed.copyOfRange(12, packed.size)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
