@@ -208,7 +208,7 @@ class RunSenseRepository(
         sxBusy.add(id)
         var result: StreamSummary? = null
         try {
-            val raw = icu.get("activity/${java.net.URLEncoder.encode(id, Charsets.UTF_8).replace("+", "%20")}/streams.json?types=time,distance,heartrate")
+            val raw = icu.get("activity/${java.net.URLEncoder.encode(id, "UTF-8").replace("+", "%20")}/streams.json?types=time,distance,heartrate")
             val sd = Codec.parseStream(raw)
             result = (if (sd != null) data.snapshot(clock.now(), zone).summarizeStream(sd, 30) else null) ?: StreamSummary.NONE
         } catch (e: IcuException) {
