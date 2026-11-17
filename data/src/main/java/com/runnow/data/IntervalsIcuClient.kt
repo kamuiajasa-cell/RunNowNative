@@ -103,7 +103,7 @@ class IntervalsIcuClient(private val apiKey: String, private val athleteId: Stri
                 ))
             }
         }
-        IntervalsSyncResult(athlete, activities, wellness, System.currentTimeMillis())
+        return IntervalsSyncResult(athlete, activities, wellness, System.currentTimeMillis())
     }
 }
 
