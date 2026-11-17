@@ -75,8 +75,8 @@ private class NativeDataSource(private val activity: android.content.Context) {
         val zone = ZoneId.systemDefault()
         val acts = workouts.map { w ->
             val kind = when {
-                w.sportName.contains("run", true) || w.sportName.contains("lari", true) || w.sportType in setOf(1, 2, 3, 4) -> ActKind.RUN
-                w.sportName.contains("walk", true) || w.sportName.contains("jalan", true) -> ActKind.WALK
+                w.sportType in setOf(1, 5, 11) || w.sportName.contains("run", true) || w.sportName.contains("lari", true) -> ActKind.RUN
+                w.sportType in setOf(2, 13, 14) || w.sportName.contains("walk", true) || w.sportName.contains("jalan", true) -> ActKind.WALK
                 else -> ActKind.OTHER
             }
             Act(
