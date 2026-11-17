@@ -27,7 +27,7 @@ class ClimateTest {
     @Test fun adviceNeverChangesTargetAndWarnsForHardSession() {
         val c = ClimateConditions(temperatureC = 30.0, humidityPct = 75.0, apparentTemperatureC = 35.0, windKmh = 4.0)
         val advice = climateAdvice(c, PersonalClimateProfile(false, 0, 0, explanation = ""), "QUALITY", false)
-        assertTrue(advice.message.contains("digeser"))
+        assertTrue(advice.message.contains("geser"))
         assertTrue(advice.stopWarning != null)
     }
 
