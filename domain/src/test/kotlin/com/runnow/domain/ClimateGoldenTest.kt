@@ -116,11 +116,13 @@ class ClimateGoldenTest {
                 }
                 "X" -> body.split(" ").let { cur!!.vx[it[0].toLong()] = it[1] }
                 "K" -> {
-                    val t = body.split(" ")
-                    val start = t[0].toLong()
-                    if (t[1] == "na") cur!!.ctx[start] = ClimCtx(na = true)
+                    // K memakai koma sebagai delimiter data; jangan split seluruh baris dengan spasi
+                    // karena nilai cls yang sah dapat berupa "panas & lembap".
+                    val start = body.substringBefore(" ").toLong()
+                    val payload = body.substringAfter(" ", "")
+                    if (payload == "na") cur!!.ctx[start] = ClimCtx(na = true)
                     else {
-                        val v = t[1].split(",")
+                        val v = payload.split(",")
                         cur!!.ctx[start] = ClimCtx(
                             t = numOrNull(v[0]), rh = numOrNull(v[1]), at = numOrNull(v[2]), w = numOrNull(v[3]), sr = num(v[4]), p = num(v[5]),
                             code = num(v[6]), n = v[7].toInt(), amin = num(v[8]), amax = num(v[9]), cls = v[10], gps = v[11] == "1", ng = v[12].toInt(),
