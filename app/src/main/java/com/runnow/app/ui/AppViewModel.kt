@@ -106,21 +106,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** sync() Intervals.icu (bila ada kunci) lalu pullWatch(), lalu putaran cocokkan cuaca (seperti HTML, jeda 800 ms). */
     private suspend fun syncAll(silent: Boolean) {
         busy(true)
+        val status = mutableListOf<String>()
         try {
             val key = repo.apiKey
             if (!key.isNullOrEmpty() && key != "demo") {
                 val r = repo.sync(silent)
-                if (r.message.isNotEmpty()) say(r.message)
+                if (r.message.isNotEmpty()) status += r.message
             }
             if (repo.source == "watch" || !repo.apiKey.isNullOrEmpty()) {
-                val s = repo.pullWatch()
-                if (s != null && s.wellness + s.workouts > 0) say("Jam: ${s.workouts} latihan, ${s.wellness} hari wellness")
+                val watchResult = repo.pullWatch()
+                if (watchResult != null && watchResult.wellness + watchResult.workouts > 0) {
+                    status += "Jam: ${watchResult.workouts} latihan, ${watchResult.wellness} hari wellness"
+                }
             }
             var guard = 0
             while (guard++ < 20 && repo.climateMatch() > 0) delay(800)
         } catch (e: Exception) {
-            say("Gagal: " + (e.message ?: e.toString()))
+            status += "Gagal: " + (e.message ?: e.toString())
         } finally {
+            if (status.isNotEmpty()) say(status.joinToString(" · "))
             busy(false)
             refresh()
         }
