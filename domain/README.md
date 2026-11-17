@@ -78,9 +78,28 @@ Pengurai JSON stream Intervals.icu (bentuk `[{type,data}]` atau objek) belum ada
 Tes: `ReviewGoldenTest` + `golden_review.txt` (554 review, 78 backtest), `StreamGoldenTest` + `golden_stream.txt`
 (40 stream + 16 titik jam). Buat ulang: `node gen/gen_review.js` dan `node gen/gen_stream.js` dengan `RUNSENSE_HTML=...`.
 
+## Langkah 5 (cuaca dan iklim)
+
+`Climate.kt` memuat bagian murni dari blok "Climate-aware coach" di HTML:
+
+| HTML | Kotlin |
+|---|---|
+| `clAvg`, `clV`, `clTh`, `clCls`, `clK`, `clSc`, `clStat` | fungsi top-level dengan argumen `ClimPers` (ambang pribadi) |
+| `clPers` | `Snapshot.clPers(ctx)` -> `ClimPers` |
+| `clPersTxt`, `clProfile` | `clPersTxt(P)`, `Snapshot.clProfile(ctx, P)` |
+| `clSlots` | `clSlots(wx, dur, nowC, P, nowMs, zone)` |
+| `gOK`, `gPick`, `clGpsPts` | `gOK`, `gPick`, `gpsFromWatchPoints` |
+| bagian akhir `clMatch` | `climCtxOf(cs, P, nowMs, usedGps, nPts)` |
+
+Yang belum dan sengaja ditunda ke Fase C: `climPaint`, `climHome`, `climAct` (menggambar layar). Bagian jaringan (`wxGet`,
+`clGpsIcu`, `clMatch`, `clLoc`) ada di modul `:data`.
+Tes: `ClimateGoldenTest` + `golden_climate.txt` (30 dataset: ambang pribadi ok/belum, cmp, slot, rata-rata cuaca).
+Buat ulang: `node gen/gen_climate.js` dengan `RUNSENSE_HTML=...`. `gen/data_harness.js` menjalankan seluruh blok cuaca dan
+lapisan data HTML dengan `localStorage` dan `fetch` palsu (dipakai juga oleh `gen/gen_data.js` untuk modul `:data`).
+
 ## Belum diport (langkah berikutnya)
 
-modul cuaca `cl*` (Langkah 5, opsional), lalu lapisan data (Langkah 6). Semuanya memakai `Snapshot` yang sama.
+Layar (Fase C) dan penutup (Fase D). Lapisan data ada di modul `:data` (Langkah 6).
 
 ## Catatan
 
