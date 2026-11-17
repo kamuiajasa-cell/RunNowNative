@@ -40,7 +40,7 @@ class NativeMainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent { RunNowNativeApp(
             onPair = { startActivity(Intent(this, PairingActivity::class.java)) },
-            onSettings = { startActivity(Intent(this, SettingsActivity::class.java)) },
+            onSettings = { startActivity(Intent(this, PairingActivity::class.java)) },
             onSaveProfile = { age, rest, max, goal -> getSharedPreferences("native_athlete", MODE_PRIVATE).edit().putInt("age", age).putFloat("resting_hr", rest.toFloat()).putFloat("max_hr", max.toFloat()).putString("goal", goal).apply() },
             load = { NativeDataSource(this).load() },
         ) }
@@ -183,7 +183,7 @@ private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSavePr
                             fontSize = 25.sp, fontWeight = FontWeight.Bold, color = Ink)
                     }
                     TextButton(onClick = { scope.launch { refresh() } }) {
-                        Text(if (busy) "Memuat…" else "Sinkron", color = Ink)
+                        Text(if (busy) "Memuat…" else "Perbarui", color = Ink)
                     }
                 }
                 if (failure != null) Text(failure!!, Modifier.padding(horizontal = 22.dp), color = Color(0xFFB3261E))
