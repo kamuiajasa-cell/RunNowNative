@@ -97,6 +97,7 @@ fun ProgressScreen(ui: UiState, vm: AppViewModel) {
 @Composable
 fun MeScreen(ui: UiState, vm: AppViewModel) {
     val ctx = LocalContext.current
+    var apiKey by rememberSaveable { mutableStateOf("") }
     ScreenFrame("Saya") {
         RunCard {
             Muted("Tema")
@@ -109,6 +110,23 @@ fun MeScreen(ui: UiState, vm: AppViewModel) {
                     }
                 }
             }
+        }
+        RunCard {
+            Text("Akun Intervals.icu", fontWeight = FontWeight.SemiBold, color = RunTheme.colors.tx)
+            Muted(if (ui.hasKey) "API key tersimpan di perangkat. Masukkan key baru bila ingin mengganti atau memperbaiki koneksi." else "Belum ada API key tersimpan.")
+            OutlinedTextField(
+                value = apiKey,
+                onValueChange = { apiKey = it },
+                singleLine = true,
+                label = { Text("API key") },
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Button(
+                onClick = { vm.connect(apiKey); apiKey = "" },
+                enabled = !ui.busy && apiKey.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Simpan key & sinkron") }
         }
         RunCard {
             Muted(if (ui.isDemo) "Mode demo" else if (ui.source == "watch") "Sumber: data jam" else "Sumber: Intervals.icu")
