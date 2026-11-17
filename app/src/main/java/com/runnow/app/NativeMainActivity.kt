@@ -470,8 +470,9 @@ private fun ActivityStreamSummary(points: List<WatchWorkoutPoint>, loading: Bool
             if (restingHr > 0 && maxHr > restingHr) HeartRateZones(hr, restingHr, maxHr)
         } else Text("Rekaman detak jantung tidak cukup untuk membuat grafik.", color = Muted, fontSize = 12.sp)
         PaceStreamChart(points)
-        val speeds = points.mapNotNull { it.speed?.takeIf { v -> v in 0.5..12.0 } }
-        if (speeds.isNotEmpty()) Metric("Pace stream rata-rata", String.format(Locale.US, "%d:%02d/km", (60.0 / speeds.average()).toInt() / 60, (60.0 / speeds.average()).toInt() % 60))
+        averagePaceSecondsPerKm(points)?.let { seconds ->
+            Metric("Pace stream rata-rata", String.format(Locale.US, "%d:%02d/km", seconds / 60, seconds % 60))
+        }
         val splits = streamPaceSplits(points)
         if (splits.isNotEmpty()) {
             Divider()
@@ -517,6 +518,20 @@ private fun HeartRateZones(values: List<Int>, restingHr: Double, maxHr: Double) 
     }
 }
 
+private fun averagePaceSecondsPerKm(points: List<WatchWorkoutPoint>): Int? {
+    var distanceMeters = 0.0
+    var durationSeconds = 0.0
+    points.zipWithNext().forEach { (a, b) ->
+        val dt = b.tsSec - a.tsSec
+        val speed = (b.speed ?: a.speed)?.takeIf { it.isFinite() && it in 0.5..12.0 }
+        if (dt in 1..20 && speed != null) {
+            distanceMeters += speed * dt
+            durationSeconds += dt
+        }
+    }
+    if (distanceMeters <= 0.0 || durationSeconds <= 0.0) return null
+    return (durationSeconds / distanceMeters * 1000.0).toInt().takeIf { it in 120..1200 }
+}
 private fun streamPaceSplits(points: List<WatchWorkoutPoint>): List<Int> {
     if (points.size < 2) return emptyList()
     fun distance(a: WatchWorkoutPoint, b: WatchWorkoutPoint): Double {
@@ -536,7 +551,7 @@ private fun streamPaceSplits(points: List<WatchWorkoutPoint>): List<Int> {
         val dt = point.tsSec - previous.tsSec
         val gpsSegment = if (previous.lat != null && previous.lon != null && point.lat != null && point.lon != null) distance(previous, point) else null
         val speedSegment = (point.speed ?: previous.speed)?.takeIf { it.isFinite() && it in 0.5..12.0 }?.times(dt.toDouble())
-        val segment = gpsSegment ?: speedSegment ?: 0.0
+        val segment = speedSegment ?: gpsSegment ?: 0.0
         if (dt in 1..20 && segment in 0.5..(dt * 12.0)) {
             val before = cumulative
             cumulative += segment
