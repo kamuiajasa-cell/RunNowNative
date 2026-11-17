@@ -328,6 +328,9 @@ private fun TodayScreen(s: NativeState?, onPair: () -> Unit, onSaveSettings: (Se
             SurfaceCard {
                 Text("ARAHAN COACH", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
                 Text(s?.result?.recommendation?.title ?: "Belum ada rekomendasi", fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                s?.result?.let { result ->
+                    Text(coachLine(result.recommendation, result.athlete.formLabel), color = Muted, fontSize = 13.sp)
+                }
                 Text(s?.result?.recommendation?.duration ?: "Data latihan diperlukan", color = Muted)
                 Text(s?.result?.recommendation?.pace ?: "—", color = Muted, fontSize = 13.sp)
                 Text(s?.result?.recommendation?.hr ?: "", color = Muted, fontSize = 13.sp)
