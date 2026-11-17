@@ -419,7 +419,7 @@ private fun HistoryScreen(s: NativeState?, loadActivityPoints: suspend (Act) -> 
             text = {
                 Column(Modifier.heightIn(max = 520.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ActivityRow(act)
-                    ActivityStreamSummary(activityPoints, activityLoading, activityError, s?.restingHr ?: 0.0, s?.maxHr ?: 0.0)
+                    ActivityStreamSummary(activityPoints, activityLoading, activityError, s?.result?.profile?.rest ?: 0.0, s?.result?.profile?.max ?: 0.0)
                     review?.let {
                         Divider()
                         Text(it.headline ?: "Analisis aktivitas", fontWeight = FontWeight.SemiBold)
