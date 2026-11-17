@@ -58,7 +58,7 @@ class ClimateDataRepository(context: Context, private val weather: OpenMeteoProv
         val all = contexts().toMutableMap()
         all[context.startMs] = context
         val root = JSONObject()
-        all.toSortedMap().entries.takeLast(400).forEach { (start, value) ->
+        all.toSortedMap().entries.toList().takeLast(400).forEach { (start, value) ->
             val c = value.conditions
             root.put(start.toString(), JSONObject()
                 .put("source", value.source).put("gps", value.matchedWithGps)
