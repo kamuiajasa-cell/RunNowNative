@@ -26,6 +26,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -117,7 +118,7 @@ private class NativeDataSource(private val activity: android.content.Context) {
             act.start to climateAdvice(context.conditions, climateProfile, tag, false,
                 comparison?.deltaHr, comparison?.count ?: 0, comparison?.confidence)
         }.toMap()
-        var snap = data.snapshot.copy(settings = Settings(goal = goal))
+        var snap = data.snapshot.copy(settings = data.snapshot.settings.copy(goal = goal))
         val acts = snap.acts
         val wellness = snap.wellness
         val process = if (acts.isNotEmpty() || wellness.isNotEmpty()) snap.processData() else null
@@ -260,105 +261,191 @@ private fun TodayScreen(s: NativeState?, onPair: () -> Unit) {
 
 @Composable
 private fun HistoryScreen(s: NativeState?) {
+    var period by remember { mutableStateOf("Bulan ini") }
+    var selected by remember { mutableStateOf<WatchWorkout?>(null) }
+    val today = LocalDate.now()
+    val all = s?.workouts.orEmpty()
+    val filtered = all.filter { w ->
+        val date = Instant.ofEpochSecond(w.startSec).atZone(ZoneId.systemDefault()).toLocalDate()
+        when (period) {
+            "Minggu ini" -> !date.isBefore(today.with(java.time.DayOfWeek.MONDAY))
+            "Bulan ini" -> date.year == today.year && date.month == today.month
+            else -> true
+        }
+    }
+    val km = filtered.sumOf { it.distanceM } / 1000.0
     LazyColumn(contentPadding = PaddingValues(horizontal = 18.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
-            SurfaceCard {
-                Text("RINGKASAN", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-                    Metric("Total", String.format(Locale.US, "%.1f km", s?.workouts.orEmpty().sumOf { it.distanceM } / 1000.0))
-                    Metric("Aktivitas", s?.workouts?.size?.toString() ?: "0")
-                    Metric("Menit", (s?.workouts.orEmpty().sumOf { it.durationSec } / 60).toString())
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("Minggu ini", "Bulan ini", "Semua").forEach { label ->
+                    FilterChip(selected = period == label, onClick = { period = label }, label = { Text(label) })
                 }
             }
         }
-        items(s?.workouts.orEmpty(), key = { it.id }) { w ->
+        item {
+            SurfaceCard {
+                Text("RINGKASAN · $period".uppercase(), color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Metric("Jarak", String.format(Locale.US, "%.1f km", km))
+                    Metric("Aktivitas", filtered.size.toString())
+                    Metric("Durasi", "${filtered.sumOf { it.durationSec } / 3600}j ${(filtered.sumOf { it.durationSec } % 3600) / 60}m")
+                }
+            }
+        }
+        if (filtered.isEmpty()) item {
+            SurfaceCard {
+                Text("Belum ada aktivitas pada periode ini", fontWeight = FontWeight.SemiBold)
+                Text("Aktivitas akan muncul setelah disinkronkan dari jam atau Intervals.icu.", color = Muted, fontSize = 12.sp)
+            }
+        }
+        items(filtered, key = { it.id }) { w ->
             SurfaceCard {
                 WorkoutRow(w)
-                val act = s?.acts?.firstOrNull { it.icuId == "hw${w.id}" || it.icuId == w.id.toString() }
-                val review = s?.reviews?.get(act?.start)
-                if (review != null) review.headline?.let { headline ->
-                    Divider(color = Surface)
-                    Text(headline, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    Text(review.summary, color = Muted, fontSize = 12.sp)
-                    review.sections.take(2).forEach { section ->
-                        Text(section.title, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                        section.notes.take(2).forEach { Text("• ${it.text}", color = Muted, fontSize = 12.sp) }
-                    }
-                }
-                val climate = act?.let { s?.climateContexts?.get(it.start) }
-                climate?.let { ctx ->
-                    val c = ctx.conditions
-                    Divider(color = Surface)
-                    Text("KONTEKS CUACA SAAT LARI", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    Text("${c.temperatureC?.let { "${it.toInt()}°C" } ?: "—"} · terasa ${c.apparentTemperatureC?.let { "${it.toInt()}°C" } ?: "—"} · lembap ${c.humidityPct?.let { "${it.toInt()}%" } ?: "—"}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    Text(if (ctx.matchedWithGps) "Dicocokkan dari ${ctx.gpsPointCount} titik GPS · ${ctx.source}" else "Perkiraan lokasi tersimpan · keyakinan lebih rendah", color = Muted, fontSize = 11.sp)
-                    act?.let { run -> s?.climateAdvice?.get(run.start) }?.let { advice ->
-                        Text(advice.message, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                        advice.personalComparison?.let { Text(it, color = Muted, fontSize = 11.sp) }
-                        advice.stopWarning?.let { Text(it, color = Color(0xFFB3261E), fontSize = 11.sp) }
-                    }
-                }
+                TextButton(onClick = { selected = w }) { Text("Lihat analisis aktivitas") }
             }
         }
+    }
+    selected?.let { w ->
+        val act = s?.acts?.firstOrNull { it.icuId == "hw${w.id}" || it.icuId == w.id.toString() }
+        val review = act?.let { s?.reviews?.get(it.start) }
+        val climate = act?.let { s?.climateContexts?.get(it.start) }
+        AlertDialog(
+            onDismissRequest = { selected = null },
+            title = { Text(w.sportName.ifBlank { "Detail aktivitas" }) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    WorkoutRow(w)
+                    review?.let {
+                        Divider()
+                        Text(it.headline ?: "Analisis aktivitas", fontWeight = FontWeight.SemiBold)
+                        Text(it.summary, color = Muted, fontSize = 12.sp)
+                        it.sections.forEach { section ->
+                            Text(section.title, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            section.notes.forEach { note -> Text("• ${note.text}", color = Muted, fontSize = 12.sp) }
+                        }
+                    }
+                    climate?.let { ctx ->
+                        Divider()
+                        Text("Cuaca saat lari", fontWeight = FontWeight.SemiBold)
+                        Text("${ctx.conditions.temperatureC?.let { "${it.toInt()}°C" } ?: "Tidak tersedia"} · terasa ${ctx.conditions.apparentTemperatureC?.let { "${it.toInt()}°C" } ?: "—"} · RH ${ctx.conditions.humidityPct?.let { "${it.toInt()}%" } ?: "—"}", fontSize = 12.sp)
+                        s?.climateAdvice?.get(act!!.start)?.let { Text(it.message, fontSize = 12.sp) }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { selected = null }) { Text("Tutup") } },
+        )
     }
 }
 
 @Composable
 private fun AnalysisScreen(s: NativeState?) {
+    var section by remember { mutableStateOf("Ikhtisar") }
+    val sections = listOf("Ikhtisar", "Beban", "Performa", "Wellness")
+    val runs = s?.acts.orEmpty().filter { it.kind == ActKind.RUN }
+    val athlete = s?.result?.athlete
+    val totalKm = runs.sumOf { it.km }
+    val totalMinutes = runs.sumOf { it.min }
+    val weeks = (7 downTo 0).map { back ->
+        val start = LocalDate.now().minusWeeks(back.toLong())
+        val weekStart = start.with(java.time.DayOfWeek.MONDAY)
+        runs.filter { act ->
+            val d = Instant.ofEpochMilli(act.start).atZone(ZoneId.systemDefault()).toLocalDate()
+            !d.isBefore(weekStart) && d.isBefore(weekStart.plusDays(7))
+        }.sumOf { it.km }.toFloat()
+    }
     LazyColumn(contentPadding = PaddingValues(horizontal = 18.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
-            SurfaceCard {
-                Text("BEBAN LATIHAN", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                val a = s?.result?.athlete
-                Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                    Metric("CTL", a?.ctl?.let { String.format(Locale.US, "%.0f", it) } ?: "—")
-                    Metric("ATL", a?.atl?.let { String.format(Locale.US, "%.0f", it) } ?: "—")
-                    Metric("TSB", a?.tsb?.let { String.format(Locale.US, "%+.0f", it) } ?: "—")
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                sections.forEach { label ->
+                    FilterChip(selected = section == label, onClick = { section = label }, label = { Text(label) })
                 }
-                Text("CTL = kebugaran jangka panjang · ATL = beban akut · TSB = keseimbangan beban.", color = Muted, fontSize = 12.sp)
             }
         }
-        item {
-            SurfaceCard {
-                Text("KAPASITAS & AMBANG", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                val a = s?.result?.athlete
-                Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                    Metric("LTHR", a?.lthr?.let { "$it bpm" } ?: "—")
-                    Metric("LTPace", a?.ltPace?.let { "$it/km" } ?: "—")
-                }
-                Text("Tahap adaptasi: ${a?.stageName ?: "Belum terukur"}", color = Muted, fontSize = 13.sp)
-            }
-        }
-        item {
-            SurfaceCard {
-                Text("JARAK 7 HARI", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                val values = (6 downTo 0).map { back ->
-                    val date = java.time.LocalDate.now().minusDays(back.toLong())
-                    s?.workouts.orEmpty().filter {
-                        Instant.ofEpochSecond(it.startSec).atZone(ZoneId.systemDefault()).toLocalDate() == date
-                    }.sumOf { it.distanceM } / 1000f
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
-                    values.forEachIndexed { i, v ->
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Box(Modifier.width(28.dp).height((12 + v.coerceAtMost(12f) * 8).dp).background(if (i == 6) Accent else Ink, RoundedCornerShape(6.dp)))
-                            Text(listOf("S","S","R","K","J","S","M")[i].toString(), fontSize = 10.sp, color = Muted)
+        when (section) {
+            "Ikhtisar" -> {
+                item {
+                    SurfaceCard {
+                        Text("RINGKASAN PERFORMA", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Metric("Jarak total", String.format(Locale.US, "%.1f km", totalKm))
+                            Metric("Sesi lari", runs.size.toString())
+                            Metric("Waktu", "${totalMinutes.toInt()} mnt")
                         }
+                        Text("Data seluruh riwayat yang tersimpan · bukan hanya periode 8 minggu.", color = Muted, fontSize = 11.sp)
                     }
                 }
-                Text(String.format(Locale.US, "Total %.1f km", values.sum()), fontWeight = FontWeight.SemiBold)
+                item {
+                    SurfaceCard {
+                        Text("KONSISTENSI 8 MINGGU", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
+                            weeks.forEachIndexed { i, value ->
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Box(Modifier.width(24.dp).height((8 + value.coerceAtMost(30f) * 3).dp).background(if (i == 7) Accent else Ink, RoundedCornerShape(5.dp)))
+                                    Text("${i + 1}", color = Muted, fontSize = 9.sp)
+                                }
+                            }
+                        }
+                        Text(String.format(Locale.US, "Rata-rata %.1f km per minggu", weeks.average()), fontWeight = FontWeight.SemiBold)
+                    }
+                }
             }
-        }
-        item {
-            SurfaceCard {
-                Text("WELLNESS", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                val day = s?.days?.firstOrNull()
-                val night = s?.sleep?.firstOrNull()
-                val hrv = s?.hrv?.firstOrNull { it.source.equals("night", true) }
-                Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                    Metric("RHR", day?.restingHr?.let { "$it bpm" } ?: "—")
-                    Metric("HRV", hrv?.let { String.format(Locale.US, "%.0f ms", it.rmssd) } ?: "—")
-                    Metric("Tidur", night?.let { "${it.asleepSec / 3600}j ${(it.asleepSec % 3600) / 60}m" } ?: "—")
+            "Beban" -> {
+                item {
+                    SurfaceCard {
+                        Text("BEBAN LATIHAN", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Metric("CTL", athlete?.ctl?.let { String.format(Locale.US, "%.0f", it) } ?: "—")
+                            Metric("ATL", athlete?.atl?.let { String.format(Locale.US, "%.0f", it) } ?: "—")
+                            Metric("TSB", athlete?.tsb?.let { String.format(Locale.US, "%+.0f", it) } ?: "—")
+                        }
+                        Text("CTL menggambarkan beban jangka panjang; ATL beban jangka pendek; TSB selisih CTL dan ATL. Ini estimasi model, bukan pengukuran jaringan tubuh.", color = Muted, fontSize = 12.sp)
+                    }
+                }
+                item {
+                    SurfaceCard {
+                        Text("ARAHAN COACH", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text(s?.result?.recommendation?.title ?: "Belum cukup data", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Text(s?.result?.recommendation?.reason ?: "Sinkronkan beberapa minggu aktivitas untuk membangun estimasi beban.", color = Muted, fontSize = 12.sp)
+                    }
+                }
+            }
+            "Performa" -> {
+                item {
+                    SurfaceCard {
+                        Text("KAPASITAS & AMBANG", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Metric("LTHR", athlete?.lthr?.let { "$it bpm" } ?: "—")
+                            Metric("LTPace", athlete?.ltPace?.let { "$it/km" } ?: "—")
+                            Metric("Tahap", athlete?.stageName ?: "—")
+                        }
+                        Text("Ambang ditampilkan jika mesin dapat memperkirakannya dari data yang tersedia.", color = Muted, fontSize = 12.sp)
+                    }
+                }
+                item {
+                    SurfaceCard {
+                        Text("REKOR AKTIVITAS", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        val best5k = runs.filter { it.km >= 4.8 && it.km <= 5.3 && it.min > 0 }.minByOrNull { it.min }
+                        val best10k = runs.filter { it.km >= 9.7 && it.km <= 10.5 && it.min > 0 }.minByOrNull { it.min }
+                        Metric("5K terdekat", best5k?.let { "${it.min.toInt()} menit · ${String.format(Locale.US, "%.2f km", it.km)}" } ?: "Belum ada data")
+                        Metric("10K terdekat", best10k?.let { "${it.min.toInt()} menit · ${String.format(Locale.US, "%.2f km", it.km)}" } ?: "Belum ada data")
+                        Text("Ini sesi dengan jarak terdekat pada arsip, bukan rekor resmi hasil pemotongan split.", color = Muted, fontSize = 11.sp)
+                    }
+                }
+            }
+            else -> {
+                item {
+                    SurfaceCard {
+                        Text("WELLNESS", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        val day = s?.days?.firstOrNull()
+                        val night = s?.sleep?.firstOrNull()
+                        val hrv = s?.hrv?.firstOrNull { it.source.equals("night", true) }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Metric("RHR", day?.restingHr?.let { "$it bpm" } ?: "—")
+                            Metric("HRV", hrv?.let { String.format(Locale.US, "%.0f ms", it.rmssd) } ?: "—")
+                            Metric("Tidur", night?.let { "${it.asleepSec / 3600}j ${(it.asleepSec % 3600) / 60}m" } ?: "—")
+                        }
+                        Text("Nilai kosong berarti sumber belum menyediakan data; tidak dianggap nol.", color = Muted, fontSize = 11.sp)
+                    }
                 }
             }
         }
