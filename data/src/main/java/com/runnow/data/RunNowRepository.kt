@@ -110,16 +110,31 @@ class RunNowRepository(context: Context) {
             val dist = mutableListOf<Double>()
             val hr = mutableListOf<Double>()
             var meters = 0.0
-            pts.forEach { p ->
-                if (time.isNotEmpty()) {
-                    val dt = (p.tsSec - time.last()).takeIf { it > 0 } ?: return@forEach
-                    meters += (p.speed ?: 0.0).coerceAtLeast(0.0) * dt
+            var previous: com.joyodigitama.huaweiwear.WatchWorkoutPoint? = null
+            pts.forEach pointLoop@{ p ->
+                val prev = previous
+                if (prev != null) {
+                    val dt = p.tsSec - prev.tsSec
+                    if (dt <= 0) return@pointLoop
+                    val bySpeed = p.speed?.takeIf { it > 0 }?.times(dt)
+                    val byGps = if (prev.lat != null && prev.lon != null && p.lat != null && p.lon != null) {
+                        val lat1 = Math.toRadians(prev.lat)
+                        val lat2 = Math.toRadians(p.lat)
+                        val dLat = lat2 - lat1
+                        val dLon = Math.toRadians(p.lon - prev.lon)
+                        val h = kotlin.math.sin(dLat / 2) * kotlin.math.sin(dLat / 2) +
+                            kotlin.math.cos(lat1) * kotlin.math.cos(lat2) *
+                            kotlin.math.sin(dLon / 2) * kotlin.math.sin(dLon / 2)
+                        (6371000.0 * 2 * kotlin.math.asin(kotlin.math.sqrt(h.coerceIn(0.0, 1.0)))).takeIf { it < 100.0 }
+                    } else null
+                    meters += (bySpeed ?: byGps ?: 0.0).coerceAtLeast(0.0)
                 }
                 time += p.tsSec.toDouble()
                 dist += meters
                 hr += (p.hr ?: 0).toDouble()
+                previous = p
             }
-            streamMap[id] = summarizeStream(StreamData(time, dist, hr), minN = 40) ?: StreamSummary.NONE
+            streamMap[id] = summarizeStream(StreamData(time, dist, hr.takeIf { values -> values.any { it > 0 } }), minN = 40) ?: StreamSummary.NONE
         }
 
         val wellness = wellnessByDate.values.sortedBy { it.id }.takeLast(400)
