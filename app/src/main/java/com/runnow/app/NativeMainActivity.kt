@@ -201,7 +201,7 @@ private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSavePr
                 val s = state
                 if (busy && s == null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 else when (tab) {
-                    0 -> TodayScreen(s, onPair)
+                    0 -> TodayScreen(s, onPair) { updated -> onSaveSettings(updated); state = state?.copy(settings = updated) }
                     1 -> HistoryScreen(s)
                     2 -> AnalysisScreen(s)
                     else -> ProfileScreen(s, onPair, onSettings, onSaveSettings, loadClimate, onSyncIntervals = { key ->
@@ -219,7 +219,7 @@ private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSavePr
 }
 
 @Composable
-private fun TodayScreen(s: NativeState?, onPair: () -> Unit) {
+private fun TodayScreen(s: NativeState?, onPair: () -> Unit, onSaveSettings: (Settings) -> Unit) {
     LazyColumn(contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             SurfaceCard {
@@ -241,6 +241,19 @@ private fun TodayScreen(s: NativeState?, onPair: () -> Unit) {
                 Text(s?.result?.recommendation?.hr ?: "", color = Muted, fontSize = 13.sp)
                 if (s?.result != null) s.result.recommendation.steps.forEach { (a,b) ->
                     Text("• $a — $b", fontSize = 13.sp, color = Ink)
+                }
+            }
+        }
+        item {
+            SurfaceCard {
+                Text("SINYAL TUBUH", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+                val flag = s?.settings?.flag
+                Text(when (flag?.lv) { 2 -> "Kaki ditandai sakit"; 1 -> "Kaki perlu diwaspadai"; else -> "Kaki terasa baik" }, fontWeight = FontWeight.SemiBold)
+                Text("Tandai kondisi kaki agar coach menyesuaikan beban. Ini bukan diagnosis medis.", color = Muted, fontSize = 11.sp)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected = flag == null, onClick = { onSaveSettings((s?.settings ?: Settings()).copy(flag = null)) }, label = { Text("Baik") })
+                    FilterChip(selected = flag?.lv == 1, onClick = { onSaveSettings((s?.settings ?: Settings()).copy(flag = LegFlag(1, System.currentTimeMillis()))) }, label = { Text("Waspada") })
+                    FilterChip(selected = flag?.lv == 2, onClick = { onSaveSettings((s?.settings ?: Settings()).copy(flag = LegFlag(2, System.currentTimeMillis()))) }, label = { Text("Sakit") })
                 }
             }
         }
