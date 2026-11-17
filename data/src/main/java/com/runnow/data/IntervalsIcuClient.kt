@@ -42,6 +42,28 @@ class IntervalsIcuClient(private val apiKey: String, private val athleteId: Stri
         } finally { connection.disconnect() }
     }
 
+    /** Ambil stream aktivitas saat detail dibuka; tidak menyimpan payload stream mentah. */
+    suspend fun activityStream(activityId: String): com.runnow.domain.StreamData? = runCatching {
+        val raw = get("activity/${java.net.URLEncoder.encode(activityId, "UTF-8")}/streams.json?types=time,distance,heartrate")
+        val root = org.json.JSONTokener(raw).nextValue()
+        fun values(type: String): List<Double>? {
+            val data: JSONArray? = if (root is JSONArray) {
+                (0 until root.length()).mapNotNull { root.optJSONObject(it) }
+                    .firstOrNull { it.optString("type") == type }?.optJSONArray("data")
+            } else if (root is JSONObject) {
+                root.optJSONObject(type)?.optJSONArray("data")
+                    ?: root.optJSONArray(type)
+            } else null
+            if (data == null) return null
+            return buildList { for (i in 0 until data.length()) add(data.optDouble(i, Double.NaN)) }
+        }
+        val time = values("time")?.filter { it.isFinite() } ?: return@runCatching null
+        val distance = values("distance") ?: return@runCatching null
+        if (time.size < 2 || time.size != distance.size || distance.any { !it.isFinite() }) return@runCatching null
+        val hr = values("heartrate")?.takeIf { it.size == time.size }
+        com.runnow.domain.StreamData(time, distance, hr)
+    }.getOrNull()
+
     /** Ambil stream waktu + GPS untuk pencocokan cuaca historis; tidak menyimpan rute mentah. */
     suspend fun activityGps(activityId: String, durationSeconds: Double): List<ActivityGpsPoint>? = runCatching {
         val raw = get("activity/${java.net.URLEncoder.encode(activityId, "UTF-8")}/streams.json?types=time,latlng")
