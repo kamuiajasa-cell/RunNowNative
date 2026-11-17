@@ -1,6 +1,6 @@
-# RunSense (Run Now Native)
+# RunNow Native
 
-Aplikasi Android **RunSense** yang menggabungkan antarmuka Run Now dengan integrasi perangkat wearable Huawei/Honor. Proyek ini menggunakan Android native (Kotlin) sebagai host aplikasi, sementara halaman Run Now dan pengaturannya dirender di WebView lokal.
+Aplikasi Android **RunNow** yang berfungsi sebagai cangkang WebView untuk aplikasi HTML RunNow2. Android native (Kotlin) memuat URL HTTPS RunNow2 sebagai halaman utama, lalu menyediakan bridge ke fitur Android dan integrasi perangkat wearable Huawei/Honor. Layar pengaturan perangkat tertentu tetap menggunakan aset HTML lokal.
 
 > **Status proyek:** dalam pengembangan. Keberhasilan kompilasi bukan bukti bahwa seluruh fitur Bluetooth, sinkronisasi, dan notifikasi sudah teruji pada perangkat fisik.
 
@@ -9,7 +9,7 @@ Aplikasi Android **RunSense** yang menggabungkan antarmuka Run Now dengan integr
 ```text
 Android app (Kotlin)
 ├── MainActivity
-│   └── WebView → app/src/main/assets/index.html
+│   └── WebView → URL RunNow2 (ServerConfig.DEFAULT_URL)
 ├── SettingsActivity
 │   └── WebView → app/src/main/assets/pengaturan.html
 ├── RunNowBridge
@@ -18,13 +18,13 @@ Android app (Kotlin)
     └── koneksi Bluetooth LE, pengelolaan perangkat, dan sinkronisasi
 ```
 
-WebView memuat aset lokal melalui **AndroidX WebKit WebViewAssetLoader** pada origin `https://runnow.local`. Cara ini mempertahankan perilaku origin HTTPS untuk penyimpanan web seperti `localStorage`, tanpa harus mengambil halaman utama dari server.
+Halaman utama dimuat langsung dari URL HTTPS yang tersimpan di **Pengaturan > Alamat server** (bawaan: `https://runnow2.kamui-aja-sa.workers.dev`). `WebViewAssetLoader` pada origin `https://runnow.local` dipakai untuk halaman pengaturan lokal, bukan sebagai pengganti halaman utama. Penyimpanan dan antarmuka aplikasi utama dikelola oleh situs RunNow2.
 
 ## Fitur dan integrasi
 
 ### Aplikasi RunSense
-- Halaman utama berada di `app/src/main/assets/index.html`.
-- Halaman pengaturan berada di `app/src/main/assets/pengaturan.html`.
+- Halaman utama berasal dari URL server yang diatur melalui `ServerConfig`; URL bawaan adalah `https://runnow2.kamui-aja-sa.workers.dev`.
+- Halaman pengaturan native berada di `app/src/main/assets/pengaturan.html` dan dibuka melalui `SettingsActivity`.
 - Navigasi layar native ditangani melalui `Routes.kt`.
 - Pengingat rencana latihan dijadwalkan Android dan dapat dijadwalkan ulang setelah perangkat dimulai ulang.
 
