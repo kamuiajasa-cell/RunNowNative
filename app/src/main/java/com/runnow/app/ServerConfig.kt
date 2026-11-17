@@ -11,8 +11,17 @@ internal object ServerConfig {
     private const val PREFS = "runnow_settings"
     private const val KEY_URL = "start_url"
 
-    fun get(ctx: Context): String =
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_URL, null)?.takeIf { it.isNotBlank() } ?: DEFAULT_URL
+    fun get(ctx: Context): String {
+        val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val saved = prefs.getString(KEY_URL, null)?.takeIf { it.isNotBlank() }
+        // Migrasi nilai dari versi yang pernah menjadikan aset lokal sebagai halaman utama.
+        // Jangan mengubah URL server kustom yang memang dipilih pengguna.
+        if (saved != null && Uri.parse(saved).host == "runnow.local") {
+            prefs.edit().putString(KEY_URL, DEFAULT_URL).apply()
+            return DEFAULT_URL
+        }
+        return saved ?: DEFAULT_URL
+    }
 
     /** null = hapus pilihan, kembali ke URL bawaan. */
     fun set(ctx: Context, url: String?) {
