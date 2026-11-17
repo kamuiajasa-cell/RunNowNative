@@ -172,3 +172,12 @@ Jangan menyimpan keystore rilis, kata sandi signing, token, atau kredensial di r
 ## Kontribusi dan pelaporan masalah
 
 Sebelum mengirim perubahan, jalankan build debug dan uji alur yang terdampak pada perangkat fisik bila perubahan menyentuh Bluetooth, sensor, notifikasi, atau proses latar belakang. Sertakan ringkasan perubahan dan hasil pengujian pada pull request.
+
+
+## Migrasi ke Kotlin native (Langkah 7)
+
+`RunNowActivity` (Compose) kini peluncur. Kerangkanya di `app/src/main/java/com/runnow/app/ui/`:
+`Theme.kt` (warna dari variabel CSS runsense.html, gelap/terang/sistem), `Tabs.kt` (5 tab), `AppViewModel.kt`
+(satu-satunya pemegang `RunSenseRepository`, semua panggilannya di satu thread), `RunNowApp.kt` (tema, gerbang Setup, bottom nav),
+`screens/` (layar sementara yang sudah membaca data nyata; diganti Langkah 8-11). `MainActivity` (WebView) tetap ada
+sebagai cadangan, dibuka dari tab Saya, dan dihapus di Langkah 12.

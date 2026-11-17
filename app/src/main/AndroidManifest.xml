@@ -27,8 +27,9 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@android:style/Theme.Material.NoActionBar">
 
+        <!-- Layar utama native (Compose). -->
         <activity
-            android:name=".MainActivity"
+            android:name=".RunNowActivity"
             android:exported="true"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -36,6 +37,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Versi lama (WebView). Tetap ada sampai Langkah 12; dibuka dari tab Saya dan oleh notifikasi. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
 
         <activity android:name=".PairingActivity" android:exported="false" />
 
