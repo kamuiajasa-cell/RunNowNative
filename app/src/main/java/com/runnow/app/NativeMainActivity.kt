@@ -45,6 +45,8 @@ class NativeMainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent { RunNowNativeApp(
+            onboardingDone = getSharedPreferences("native_ui", MODE_PRIVATE).getBoolean("onboarding_done", false),
+            onFinishOnboarding = { getSharedPreferences("native_ui", MODE_PRIVATE).edit().putBoolean("onboarding_done", true).apply() },
             onPair = { startActivity(Intent(this, PairingActivity::class.java)) },
             onSettings = { startActivity(Intent(this, PairingActivity::class.java)) },
             onSaveProfile = { age, rest, max, goal -> getSharedPreferences("native_athlete", MODE_PRIVATE).edit().putInt("age", age).putFloat("resting_hr", rest.toFloat()).putFloat("max_hr", max.toFloat()).putString("goal", goal).apply(); NativeSettingsStore(this).save(NativeSettingsStore(this).load().copy(goal = goal)) },
@@ -185,7 +187,8 @@ private class NativeDataSource(private val activity: android.content.Context) {
 }
 
 @Composable
-private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSaveProfile: (Int, Double, Double, String) -> Unit, onSaveSettings: (Settings) -> Unit, loadClimate: suspend (ClimateLocation) -> WeatherBundle, loadActivityPoints: suspend (Act) -> List<WatchWorkoutPoint>, load: suspend () -> NativeState, syncIntervals: suspend (String) -> NativeState) {
+private fun RunNowNativeApp(onboardingDone: Boolean, onFinishOnboarding: () -> Unit, onPair: () -> Unit, onSettings: () -> Unit, onSaveProfile: (Int, Double, Double, String) -> Unit, onSaveSettings: (Settings) -> Unit, loadClimate: suspend (ClimateLocation) -> WeatherBundle, loadActivityPoints: suspend (Act) -> List<WatchWorkoutPoint>, load: suspend () -> NativeState, syncIntervals: suspend (String) -> NativeState) {
+    var onboardingComplete by remember { mutableStateOf(onboardingDone) }
     var tab by remember { mutableIntStateOf(0) }
     var state by remember { mutableStateOf<NativeState?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -201,6 +204,10 @@ private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSavePr
         primary = Ink, onPrimary = Color.White, secondary = Accent,
         background = Surface, surface = Card, onSurface = Ink,
     )) {
+        if (!onboardingComplete) {
+            OnboardingScreen(onPair = { onPair() }, onContinue = { onFinishOnboarding(); onboardingComplete = true })
+            return@MaterialTheme
+        }
         Scaffold(
             containerColor = Surface,
             bottomBar = {
@@ -241,6 +248,43 @@ private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSavePr
                         }
                     }) { age, rest, max, goal -> onSaveProfile(age, rest, max, goal); scope.launch { refresh() } }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OnboardingScreen(onPair: () -> Unit, onContinue: () -> Unit) {
+    var page by remember { mutableIntStateOf(0) }
+    val titles = listOf("Lari dengan ritmemu", "Data dari perangkat", "Coach yang memahami konteks")
+    val descriptions = listOf(
+        "RunNow membantu membaca latihan, pemulihan, dan konsistensi. Fokusnya kesehatan dan progres yang bisa diulang, bukan memaksa pace setiap hari.",
+        "Riwayat dan wellness dibaca dari Huawei Watch. Intervals.icu bisa ditambahkan sebagai sumber latihan. Aplikasi tidak merekam GPS dari ponsel pada alur ini.",
+        "Rekomendasi menggabungkan riwayat latihan, beban, sinyal tubuh, dan cuaca bila tersedia. Angka yang tidak ada akan ditampilkan kosong, bukan ditebak."
+    )
+    Column(Modifier.fillMaxSize().background(Surface).padding(horizontal = 24.dp, vertical = 28.dp), verticalArrangement = Arrangement.SpaceBetween) {
+        Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            Text("RUN NOW", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                repeat(3) { index ->
+                    Box(Modifier.weight(1f).height(4.dp).background(if (index <= page) Accent else Color(0xFFE0E5DE), RoundedCornerShape(8.dp)))
+                }
+            }
+            Text("0${page + 1} / 03", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(titles[page], color = Ink, fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.Bold)
+            Text(descriptions[page], color = Muted, fontSize = 15.sp, lineHeight = 23.sp)
+            SurfaceCard {
+                Text(when(page) { 0 -> "HARI INI · RIWAYAT · ANALISIS · PROFIL"; 1 -> "HUAWEI WATCH + INTERVALS.ICU"; else -> "DATA ASLI · PRIVASI · KONTEKS" }, color = Ink, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text(when(page) { 0 -> "Satu tempat untuk melihat kondisi dan arah latihan."; 1 -> "Sinkronisasi pertama dilakukan setelah jam terhubung."; else -> "Coach memberi arahan, bukan diagnosis medis." }, color = Muted, fontSize = 12.sp)
+            }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (page < 2) {
+                Button(onClick = { page++ }, modifier = Modifier.fillMaxWidth()) { Text("Lanjut") }
+                TextButton(onClick = onContinue, modifier = Modifier.fillMaxWidth()) { Text("Lewati pengenalan") }
+            } else {
+                Button(onClick = { onPair(); onContinue() }, modifier = Modifier.fillMaxWidth()) { Text("Hubungkan Huawei Watch") }
+                TextButton(onClick = onContinue, modifier = Modifier.fillMaxWidth()) { Text("Masuk tanpa menghubungkan sekarang") }
             }
         }
     }
