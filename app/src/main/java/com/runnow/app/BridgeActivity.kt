@@ -31,8 +31,9 @@ import kotlinx.coroutines.withContext
 internal const val ORIGIN_HOST = "runnow.local"
 
 /**
- * Layar berisi satu WebView yang memuat halaman dari assets, ditambah jembatan ke Huawei core.
- * Dipakai oleh [MainActivity] (index.html) dan [SettingsActivity] (pengaturan.html).
+ * Android WebView shell: halaman utama dapat berasal dari URL HTTPS, sementara layar pengaturan
+ * native tetap dapat memuat aset lokal pada origin https://runnow.local. Kedua halaman memakai
+ * bridge Huawei yang sama.
  */
 abstract class BridgeActivity : ComponentActivity() {
     protected lateinit var web: WebView
