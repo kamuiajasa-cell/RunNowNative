@@ -99,7 +99,7 @@ private class NativeDataSource(private val activity: android.content.Context) {
                 } else if (!intervalsKey.isNullOrBlank() && sourceId.isNotBlank()) {
                     com.runnow.data.IntervalsIcuClient(intervalsKey).activityGps(sourceId, act.min * 60.0)
                 } else null
-            }, limit = 3)
+            }, limit = 1)
         }
         val climateContexts = climateRepository.contexts()
         var snap = data.snapshot.copy(settings = Settings(goal = goal))
