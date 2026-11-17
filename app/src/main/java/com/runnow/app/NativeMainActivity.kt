@@ -48,7 +48,7 @@ class NativeMainActivity : ComponentActivity() {
             onboardingDone = getSharedPreferences("native_ui", MODE_PRIVATE).getBoolean("onboarding_done", false),
             onFinishOnboarding = { getSharedPreferences("native_ui", MODE_PRIVATE).edit().putBoolean("onboarding_done", true).apply() },
             onPair = { startActivity(Intent(this, PairingActivity::class.java)) },
-            onSettings = { startActivity(Intent(this, PairingActivity::class.java)) },
+            onSettings = { startActivity(Intent(this, SettingsActivity::class.java)) },
             onSaveProfile = { age, rest, max, goal -> getSharedPreferences("native_athlete", MODE_PRIVATE).edit().putInt("age", age).putFloat("resting_hr", rest.toFloat()).putFloat("max_hr", max.toFloat()).putString("goal", goal).apply(); NativeSettingsStore(this).save(NativeSettingsStore(this).load().copy(goal = goal)) },
             onSaveSettings = { settings -> NativeSettingsStore(this).save(settings) },
             onExport = { acts ->
