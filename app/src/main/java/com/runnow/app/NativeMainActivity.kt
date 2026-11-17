@@ -616,7 +616,7 @@ private fun PaceStreamChart(points: List<WatchWorkoutPoint>) {
             val path = androidx.compose.ui.graphics.Path()
             samples.forEachIndexed { index, sample ->
                 val x = left + width * ((sample.first - first) / duration)
-                val y = top + height * (1f - (sample.second - min) / span)
+                val y = top + height * ((sample.second - min) / span)
                 if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
             drawPath(path, color = Ink, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx()))
