@@ -22,6 +22,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.joyodigitama.huaweiwear.*
 import com.runnow.domain.*
+import com.runnow.data.ClimateLocation
+import com.runnow.data.OpenMeteoProvider
+import com.runnow.data.WeatherBundle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
@@ -31,11 +34,11 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private val Ink = Color(0xFF17221F)
-private val Muted = Color(0xFF718078)
-private val Accent = Color(0xFFB8F36B)
-private val Surface = Color(0xFFF5F7F2)
-private val Card = Color(0xFFFFFFFF)
+internal val Ink = Color(0xFF17221F)
+internal val Muted = Color(0xFF718078)
+internal val Accent = Color(0xFFB8F36B)
+internal val Surface = Color(0xFFF5F7F2)
+internal val Card = Color(0xFFFFFFFF)
 
 class NativeMainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -45,6 +48,7 @@ class NativeMainActivity : ComponentActivity() {
             onSettings = { startActivity(Intent(this, PairingActivity::class.java)) },
             onSaveProfile = { age, rest, max, goal -> getSharedPreferences("native_athlete", MODE_PRIVATE).edit().putInt("age", age).putFloat("resting_hr", rest.toFloat()).putFloat("max_hr", max.toFloat()).putString("goal", goal).apply(); NativeSettingsStore(this).save(NativeSettingsStore(this).load().copy(goal = goal)) },
             onSaveSettings = { settings -> NativeSettingsStore(this).save(settings) },
+            loadClimate = { location -> NativeDataSource(this).loadClimate(location) },
             load = { NativeDataSource(this).load() },
             syncIntervals = { key -> NativeDataSource(this).syncIntervals(key) },
         ) }
@@ -70,6 +74,7 @@ private data class NativeState(
     val intervalsConnected: Boolean,
     val climateContexts: Map<Long, ClimateContext>,
     val climateProfile: PersonalClimateProfile,
+    val savedClimateLocation: ClimateLocation?,
     val climateAdvice: Map<Long, ClimateAdvice>,
     val climateComparisons: Map<Long, ClimateComparison>,
 )
@@ -129,8 +134,13 @@ private class NativeDataSource(private val activity: android.content.Context) {
         NativeState(
             overview, workouts, acts, days, sleep, hrv, process, reviews,
             data.watchAvailable, data.watchError, age, restingHr, maxHr, goal, snap.settings,
-            intervalsKey != null, climateContexts, climateProfile, climateAdviceByStart, climateComparisons,
+            intervalsKey != null, climateContexts, climateProfile, climateRepository.savedLocation(), climateAdviceByStart, climateComparisons,
         )
+    }
+
+    suspend fun loadClimate(location: ClimateLocation): WeatherBundle = withContext(Dispatchers.IO) {
+        com.runnow.data.ClimateDataRepository(activity).saveLocation(location)
+        OpenMeteoProvider(activity).forecast(location, pastDays = 1, forecastDays = 3)
     }
 
     suspend fun syncIntervals(apiKey: String): NativeState = withContext(Dispatchers.IO) {
@@ -147,7 +157,7 @@ private class NativeDataSource(private val activity: android.content.Context) {
 }
 
 @Composable
-private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSaveProfile: (Int, Double, Double, String) -> Unit, onSaveSettings: (Settings) -> Unit, load: suspend () -> NativeState, syncIntervals: suspend (String) -> NativeState) {
+private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSaveProfile: (Int, Double, Double, String) -> Unit, onSaveSettings: (Settings) -> Unit, loadClimate: suspend (ClimateLocation) -> WeatherBundle, load: suspend () -> NativeState, syncIntervals: suspend (String) -> NativeState) {
     var tab by remember { mutableIntStateOf(0) }
     var state by remember { mutableStateOf<NativeState?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -194,7 +204,7 @@ private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSavePr
                     0 -> TodayScreen(s, onPair)
                     1 -> HistoryScreen(s)
                     2 -> AnalysisScreen(s)
-                    else -> ProfileScreen(s, onPair, onSettings, onSaveSettings, onSyncIntervals = { key ->
+                    else -> ProfileScreen(s, onPair, onSettings, onSaveSettings, loadClimate, onSyncIntervals = { key ->
                         scope.launch {
                             busy = true
                             try { state = syncIntervals(key); failure = null }
@@ -460,6 +470,7 @@ private fun ProfileScreen(
     onPair: () -> Unit,
     onSettings: () -> Unit,
     onSaveSettings: (Settings) -> Unit,
+    loadClimate: suspend (ClimateLocation) -> WeatherBundle,
     onSyncIntervals: (String) -> Unit,
     onSaveProfile: (Int, Double, Double, String) -> Unit,
 ) {
@@ -482,6 +493,7 @@ private fun ProfileScreen(
         "Pendampingan" to "Gaya coach dan sinyal kaki",
         "Lari-jalan" to "Interval lari dan jalan",
         "Perangkat & sinkronisasi" to "Huawei Watch dan Intervals.icu",
+        "Cuaca & lokasi" to "Prakiraan dan waktu latihan",
         "Data & privasi" to "Penyimpanan dan sumber data",
     )
     LazyColumn(contentPadding = PaddingValues(horizontal = 18.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -642,6 +654,7 @@ private fun ProfileScreen(
                     }
                 }
             }
+            "Cuaca & lokasi" -> item { ClimateLocationScreen(s?.climateProfile, s?.savedClimateLocation, loadClimate) }
             "Data & privasi" -> {
                 item {
                     SurfaceCard {
@@ -693,7 +706,7 @@ private fun Metric(label: String, value: String) {
 }
 
 @Composable
-private fun SurfaceCard(content: @Composable ColumnScope.() -> Unit) {
+internal fun SurfaceCard(content: @Composable ColumnScope.() -> Unit) {
     Surface(color = Card, shape = RoundedCornerShape(22.dp), shadowElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(9.dp), content = content)
     }
