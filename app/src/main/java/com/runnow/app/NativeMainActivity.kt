@@ -285,7 +285,7 @@ private fun HistoryScreen(s: NativeState?) {
                     Text("KONTEKS CUACA SAAT LARI", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Text("${c.temperatureC?.let { "${it.toInt()}°C" } ?: "—"} · terasa ${c.apparentTemperatureC?.let { "${it.toInt()}°C" } ?: "—"} · lembap ${c.humidityPct?.let { "${it.toInt()}%" } ?: "—"}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     Text(if (ctx.matchedWithGps) "Dicocokkan dari ${ctx.gpsPointCount} titik GPS · ${ctx.source}" else "Perkiraan lokasi tersimpan · keyakinan lebih rendah", color = Muted, fontSize = 11.sp)
-                    s?.climateAdvice?.get(act.start)?.let { advice ->
+                    act?.let { run -> s?.climateAdvice?.get(run.start) }?.let { advice ->
                         Text(advice.message, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         advice.personalComparison?.let { Text(it, color = Muted, fontSize = 11.sp) }
                         advice.stopWarning?.let { Text(it, color = Color(0xFFB3261E), fontSize = 11.sp) }
