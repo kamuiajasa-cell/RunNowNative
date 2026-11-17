@@ -68,6 +68,7 @@ private data class NativeState(
     val climateContexts: Map<Long, ClimateContext>,
     val climateProfile: PersonalClimateProfile,
     val climateAdvice: Map<Long, ClimateAdvice>,
+    val climateComparisons: Map<Long, ClimateComparison>,
 )
 
 private class NativeDataSource(private val activity: android.content.Context) {
@@ -105,11 +106,14 @@ private class NativeDataSource(private val activity: android.content.Context) {
         }
         val climateContexts = climateRepository.contexts()
         val climateProfile = data.snapshot.personalClimateProfile(climateContexts)
+        val climateComparisons = data.snapshot.personalClimateComparisons(climateContexts, climateProfile)
         val climateAdvice = data.snapshot.acts.mapNotNull { act ->
             val context = climateContexts[act.start] ?: return@mapNotNull null
             val guess = data.snapshot.detectType(act).type
             val tag = when (guess) { "thr", "vo2" -> "QUALITY"; "long" -> "LONG"; else -> "EASY" }
-            act.start to climateAdvice(context.conditions, climateProfile, tag, false)
+            val comparison = climateComparisons[act.start]
+            act.start to climateAdvice(context.conditions, climateProfile, tag, false,
+                comparison?.deltaHr, comparison?.count ?: 0, comparison?.confidence)
         }.toMap()
         var snap = data.snapshot.copy(settings = Settings(goal = goal))
         val acts = snap.acts
@@ -120,7 +124,7 @@ private class NativeDataSource(private val activity: android.content.Context) {
         NativeState(
             overview, workouts, acts, days, sleep, hrv, process, reviews,
             data.watchAvailable, data.watchError, age, restingHr, maxHr, goal,
-            intervalsKey != null, climateContexts, climateProfile, climateAdvice,
+            intervalsKey != null, climateContexts, climateProfile, climateAdvice, climateComparisons,
         )
     }
 
