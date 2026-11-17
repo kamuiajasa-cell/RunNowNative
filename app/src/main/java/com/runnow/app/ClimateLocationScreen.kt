@@ -41,9 +41,9 @@ internal fun ClimateLocationScreen(
                 OutlinedTextField(value = latitude, onValueChange = { latitude = it.filter { ch -> ch.isDigit() || ch == '.' || ch == '-' }.take(12) }, label = { Text("Latitude") }, singleLine = true)
                 OutlinedTextField(value = longitude, onValueChange = { longitude = it.filter { ch -> ch.isDigit() || ch == '.' || ch == '-' }.take(12) }, label = { Text("Longitude") }, singleLine = true)
                 Button(
-                    enabled = !loading && latitude.toDoubleOrNull() in -90.0..90.0 && longitude.toDoubleOrNull() in -180.0..180.0,
+                    enabled = !loading && latitude.toDoubleOrNull()?.let { it in -90.0..90.0 } == true && longitude.toDoubleOrNull()?.let { it in -180.0..180.0 } == true,
                     onClick = {
-                        val loc = ClimateLocation(latitude.toDouble(), longitude.toDouble(), name.ifBlank { null }, true)
+                        val loc = ClimateLocation(latitude.toDouble(), longitude.toDouble(), name.takeIf { it.isNotBlank() }, true)
                         scope.launch {
                             loading = true
                             error = null
