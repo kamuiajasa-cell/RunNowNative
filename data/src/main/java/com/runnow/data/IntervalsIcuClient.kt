@@ -42,6 +42,44 @@ class IntervalsIcuClient(private val apiKey: String, private val athleteId: Stri
         } finally { connection.disconnect() }
     }
 
+    /** Ambil stream waktu + GPS untuk pencocokan cuaca historis; tidak menyimpan rute mentah. */
+    suspend fun activityGps(activityId: String, durationSeconds: Double): List<ActivityGpsPoint>? = runCatching {
+        val raw = get("activity/${java.net.URLEncoder.encode(activityId, "UTF-8")}/streams.json?types=time,latlng")
+        val root = org.json.JSONTokener(raw).nextValue()
+        fun stream(type: String): JSONObject? {
+            if (root is JSONArray) {
+                for (i in 0 until root.length()) {
+                    val item = root.optJSONObject(i) ?: continue
+                    if (item.optString("type") == type) return item
+                }
+            }
+            if (root is JSONObject) return root.optJSONObject(type)
+            return null
+        }
+        val timeData = stream("time")?.optJSONArray("data")
+        val gps = stream("latlng") ?: return@runCatching null
+        val latData = gps.optJSONArray("data") ?: return@runCatching null
+        val lonData = gps.optJSONArray("data2")
+        buildList {
+            for (i in 0 until latData.length()) {
+                val pair = latData.optJSONArray(i)
+                val lat: Double
+                val lon: Double
+                if (pair != null) {
+                    lat = pair.optDouble(0, Double.NaN)
+                    lon = pair.optDouble(1, Double.NaN)
+                } else {
+                    lat = latData.optDouble(i, Double.NaN)
+                    lon = lonData?.optDouble(i, Double.NaN) ?: Double.NaN
+                }
+                if (!lat.isFinite() || !lon.isFinite()) continue
+                val sec = timeData?.optDouble(i, Double.NaN)?.takeIf { it.isFinite() }
+                    ?: if (latData.length() > 1) durationSeconds * i / (latData.length() - 1) else 0.0
+                add(ActivityGpsPoint(sec, lat, lon))
+            }
+        }.takeIf { it.size >= 2 }
+    }.getOrNull()
+
     suspend fun sync(from: LocalDate, through: LocalDate): IntervalsSyncResult {
         val athlete = runCatching {
             val root = JSONObject(get("athlete/$athleteId"))
