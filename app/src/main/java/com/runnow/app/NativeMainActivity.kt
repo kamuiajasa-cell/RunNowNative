@@ -268,6 +268,13 @@ private fun HistoryScreen(s: NativeState?) {
                         Text(section.title, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                         section.notes.take(2).forEach { Text("• ${it.text}", color = Muted, fontSize = 12.sp) }
                     }
+                }                val climate = act?.let { s?.climateContexts?.get(it.start) }
+                climate?.let { ctx ->
+                    val c = ctx.conditions
+                    Divider(color = Surface)
+                    Text("KONTEKS CUACA SAAT LARI", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text("${c.temperatureC?.let { "${it.toInt()}°C" } ?: "—"} · terasa ${c.apparentTemperatureC?.let { "${it.toInt()}°C" } ?: "—"} · lembap ${c.humidityPct?.let { "${it.toInt()}%" } ?: "—"}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Text(if (ctx.matchedWithGps) "Dicocokkan dari ${ctx.gpsPointCount} titik GPS · ${ctx.source}" else "Perkiraan lokasi tersimpan · keyakinan lebih rendah", color = Muted, fontSize = 11.sp)
                 }
             }
         }
