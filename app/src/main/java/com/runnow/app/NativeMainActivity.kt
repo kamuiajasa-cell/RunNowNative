@@ -50,6 +50,7 @@ class NativeMainActivity : ComponentActivity() {
 private data class NativeState(
     val overview: WatchDataOverview,
     val workouts: List<WatchWorkout>,
+    val acts: List<Act>,
     val days: List<WatchDay>,
     val sleep: List<WatchSleepNight>,
     val hrv: List<WatchHrv>,
@@ -140,7 +141,7 @@ private class NativeDataSource(private val activity: android.content.Context) {
             snap = snap.withProcessed(process)
         }
         val reviews = acts.filter { it.kind == ActKind.RUN }.associate { it.start to snap.reviewRun(it) }
-        NativeState(overview, workouts, days, sleep, hrv, process, reviews, watch.available(), watch.lastError, age, restingHr, maxHr, goal)
+        NativeState(overview, workouts, acts, days, sleep, hrv, process, reviews, watch.available(), watch.lastError, age, restingHr, maxHr, goal)
     }
 }
 
@@ -268,7 +269,7 @@ private fun HistoryScreen(s: NativeState?) {
         items(s?.workouts.orEmpty(), key = { it.id }) { w ->
             SurfaceCard {
                 WorkoutRow(w)
-                val act = s?.result?.activities?.firstOrNull { it.act.icuId == w.id.toString() }?.act
+                val act = s?.acts?.firstOrNull { it.icuId == w.id.toString() }
                 val review = s?.reviews?.get(act?.start)
                 if (review != null && review.headline != null) {
                     Divider(color = Surface)
