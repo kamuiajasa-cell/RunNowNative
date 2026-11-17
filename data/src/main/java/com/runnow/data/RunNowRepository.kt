@@ -15,6 +15,8 @@ import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
 
+data class SyncReport(val source: String, val received: Int, val addedOrUpdated: Int, val duplicatesCollapsed: Int, val syncedAtMs: Long)
+
 data class RepositorySnapshot(
     val snapshot: Snapshot,
     val streams: Map<String, StreamSummary>,
@@ -39,7 +41,7 @@ class RunNowRepository(context: Context) {
         existingWellness: List<Wellness> = store.readWellness(),
         existingStreams: Map<String, StreamSummary> = store.readStreams(),
     ): RepositorySnapshot = withContext(Dispatchers.IO) {
-        val workouts = watch.workouts(500)
+        val workouts = watch.workouts(500).filter { it.complete }
         val watchActs = workouts.mapNotNull { w ->
             if (w.durationSec <= 0 || w.startSec <= 0) return@mapNotNull null
             val kind = when {
@@ -137,7 +139,8 @@ class RunNowRepository(context: Context) {
             watchError = watch.lastError,
             workoutCount = workouts.size,
             wellnessDays = wellness.size,
-            lastWatchSyncSec = watch.overview().lastSampleSec,
+            lastWatchSyncSec = watch.overview().devices.mapNotNull { it.lastSyncSec }.maxOrNull(),
+            lastIntervalsSyncMs = store.intervalsSyncedAtMs().takeIf { it > 0 },
         )
     }
     /** Tarik ulang database jam; upsert ID membuat sinkron berulang tidak menumpuk aktivitas. */
