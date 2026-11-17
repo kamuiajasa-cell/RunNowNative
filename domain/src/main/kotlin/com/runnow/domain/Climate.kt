@@ -297,3 +297,21 @@ fun recommendClimateSlots(
         ClimateTimeSlot(time, c, score, score <= currentScore - 1.5, why)
     }
 }
+
+/** Bangun profil suhu personal langsung dari aktivitas domain; hanya sesi easy yang lolos filter dipakai. */
+fun Snapshot.personalClimateProfile(contexts: Map<Long, ClimateContext>): PersonalClimateProfile {
+    val currentStage = stage()
+    val runs = acts.asSequence()
+        .filter { it.kind == ActKind.RUN }
+        .map { activity ->
+            ClimateRun(
+                startMs = activity.start,
+                durationMinutes = activity.min,
+                distanceKm = activity.km,
+                averageHr = activity.avgHr,
+                averagePaceMinKm = if (activity.km > 0) activity.min / activity.km else 0.0,
+                isEasy = detectType(activity, currentStage).type == "easy",
+            )
+        }.toList()
+    return personalClimateProfile(runs, contexts)
+}
