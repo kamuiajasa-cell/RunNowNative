@@ -64,6 +64,7 @@ private data class NativeState(
     val maxHr: Double,
     val goal: String,
     val intervalsConnected: Boolean,
+    val climateContexts: Map<Long, ClimateContext>,
 )
 
 private class NativeDataSource(private val activity: android.content.Context) {
@@ -82,6 +83,24 @@ private class NativeDataSource(private val activity: android.content.Context) {
         val profile = Profile(rest = restingHr, max = maxHr, age = age, restManual = restingHr > 0)
         val repository = com.runnow.data.RunNowRepository(activity)
         val data = repository.load(profile = profile)
+        val climateRepository = com.runnow.data.ClimateDataRepository(activity)
+        val intervalsKey = com.runnow.data.IntervalsCredentialStore(activity).read()
+        runCatching {
+            climateRepository.matchRecentRuns(data.snapshot, gps = { act ->
+                val sourceId = act.icuId.orEmpty()
+                if (sourceId.startsWith("hw")) {
+                    val workoutId = sourceId.removePrefix("hw").toLongOrNull() ?: return@matchRecentRuns null
+                    val workout = workouts.firstOrNull { it.id == workoutId } ?: return@matchRecentRuns null
+                    watch.workoutPoints(workoutId).mapNotNull { point ->
+                        if (point.lat == null || point.lon == null) null
+                        else com.runnow.data.ActivityGpsPoint((point.tsSec - workout.startSec).toDouble(), point.lat, point.lon)
+                    }
+                } else if (!intervalsKey.isNullOrBlank() && sourceId.isNotBlank()) {
+                    com.runnow.data.IntervalsIcuClient(intervalsKey).activityGps(sourceId, act.min * 60.0)
+                } else null
+            }, limit = 3)
+        }
+        val climateContexts = climateRepository.contexts()
         var snap = data.snapshot.copy(settings = Settings(goal = goal))
         val acts = snap.acts
         val wellness = snap.wellness
@@ -91,7 +110,7 @@ private class NativeDataSource(private val activity: android.content.Context) {
         NativeState(
             overview, workouts, acts, days, sleep, hrv, process, reviews,
             data.watchAvailable, data.watchError, age, restingHr, maxHr, goal,
-            com.runnow.data.IntervalsCredentialStore(activity).read() != null,
+            intervalsKey != null, climateContexts,
         )
     }
 
