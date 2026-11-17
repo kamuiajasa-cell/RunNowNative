@@ -43,6 +43,7 @@ class NativeMainActivity : ComponentActivity() {
             onSettings = { startActivity(Intent(this, PairingActivity::class.java)) },
             onSaveProfile = { age, rest, max, goal -> getSharedPreferences("native_athlete", MODE_PRIVATE).edit().putInt("age", age).putFloat("resting_hr", rest.toFloat()).putFloat("max_hr", max.toFloat()).putString("goal", goal).apply() },
             load = { NativeDataSource(this).load() },
+            syncIntervals = { key -> NativeDataSource(this).syncIntervals(key) },
         ) }
     }
 }
@@ -62,6 +63,7 @@ private data class NativeState(
     val restingHr: Double,
     val maxHr: Double,
     val goal: String,
+    val intervalsConnected: Boolean,
 )
 
 private class NativeDataSource(private val activity: android.content.Context) {
@@ -89,12 +91,25 @@ private class NativeDataSource(private val activity: android.content.Context) {
         NativeState(
             overview, workouts, acts, days, sleep, hrv, process, reviews,
             data.watchAvailable, data.watchError, age, restingHr, maxHr, goal,
+            com.runnow.data.IntervalsCredentialStore(activity).read() != null,
         )
+    }
+
+    suspend fun syncIntervals(apiKey: String): NativeState = withContext(Dispatchers.IO) {
+        val prefs = activity.getSharedPreferences("native_athlete", android.content.Context.MODE_PRIVATE)
+        val rest = prefs.getFloat("resting_hr", 0f).toDouble()
+        val profile = Profile(
+            rest = rest, max = prefs.getFloat("max_hr", 0f).toDouble(),
+            age = prefs.getInt("age", 0), restManual = rest > 0,
+        )
+        com.runnow.data.IntervalsCredentialStore(activity).save(apiKey)
+        com.runnow.data.RunNowRepository(activity).syncIntervals(apiKey, profile)
+        load()
     }
 }
 
 @Composable
-private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSaveProfile: (Int, Double, Double, String) -> Unit, load: suspend () -> NativeState) {
+private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSaveProfile: (Int, Double, Double, String) -> Unit, load: suspend () -> NativeState, syncIntervals: suspend (String) -> NativeState) {
     var tab by remember { mutableIntStateOf(0) }
     var state by remember { mutableStateOf<NativeState?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -141,7 +156,14 @@ private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSavePr
                     0 -> TodayScreen(s, onPair)
                     1 -> HistoryScreen(s)
                     2 -> AnalysisScreen(s)
-                    else -> ProfileScreen(s, onPair, onSettings) { age, rest, max, goal -> onSaveProfile(age, rest, max, goal); scope.launch { refresh() } }
+                    else -> ProfileScreen(s, onPair, onSettings, onSyncIntervals = { key ->
+                        scope.launch {
+                            busy = true
+                            try { state = syncIntervals(key); failure = null }
+                            catch (e: Exception) { failure = e.message ?: "Sinkronisasi Intervals gagal" }
+                            busy = false
+                        }
+                    }) { age, rest, max, goal -> onSaveProfile(age, rest, max, goal); scope.launch { refresh() } }
                 }
             }
         }
@@ -296,11 +318,12 @@ private fun AnalysisScreen(s: NativeState?) {
 }
 
 @Composable
-private fun ProfileScreen(s: NativeState?, onPair: () -> Unit, onSettings: () -> Unit, onSaveProfile: (Int, Double, Double, String) -> Unit) {
+private fun ProfileScreen(s: NativeState?, onPair: () -> Unit, onSettings: () -> Unit, onSyncIntervals: (String) -> Unit, onSaveProfile: (Int, Double, Double, String) -> Unit) {
     var age by remember(s?.age) { mutableStateOf(if ((s?.age ?: 0) > 0) s!!.age.toString() else "") }
     var rest by remember(s?.restingHr) { mutableStateOf(if ((s?.restingHr ?: 0.0) > 0) s!!.restingHr.toInt().toString() else "") }
     var max by remember(s?.maxHr) { mutableStateOf(if ((s?.maxHr ?: 0.0) > 0) s!!.maxHr.toInt().toString() else "") }
     var goal by remember(s?.goal) { mutableStateOf(s?.goal ?: "5K") }
+    var intervalsKey by remember { mutableStateOf("") }
     LazyColumn(contentPadding = PaddingValues(horizontal = 18.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             SurfaceCard {
@@ -327,6 +350,18 @@ private fun ProfileScreen(s: NativeState?, onPair: () -> Unit, onSettings: () ->
                 Text("${s?.overview?.workouts ?: 0} aktivitas · ${s?.overview?.hrSamples ?: 0} sampel HR · ${s?.overview?.hrvReadings ?: 0} pengukuran HRV",
                     color = Muted, fontSize = 13.sp)
                 Button(onClick = onPair, colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("Kelola koneksi jam") }
+            }
+        }
+        item {
+            SurfaceCard {
+                Text("INTERVALS.ICU", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text(if (s?.intervalsConnected == true) "Akun terhubung" else "Hubungkan sumber latihan", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text(if (s?.intervalsConnected == true) "Kunci API tersimpan terenkripsi di Android Keystore. Masukkan kunci baru hanya jika ingin menggantinya." else "Aktivitas, beban latihan, dan wellness dapat disinkronkan dari Intervals.icu.", color = Muted, fontSize = 12.sp)
+                OutlinedTextField(value = intervalsKey, onValueChange = { intervalsKey = it }, label = { Text("API key Intervals.icu") }, singleLine = true)
+                Button(onClick = { if (intervalsKey.isNotBlank()) onSyncIntervals(intervalsKey) },
+                    enabled = intervalsKey.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = Ink)) {
+                    Text("Simpan & sinkronkan")
+                }
             }
         }
         item {
