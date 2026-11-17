@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.joyodigitama.huaweiwear.*
@@ -383,8 +384,8 @@ private fun ProfileScreen(s: NativeState?, onPair: () -> Unit, onSettings: () ->
                 Text("INTERVALS.ICU", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 Text(if (s?.intervalsConnected == true) "Akun terhubung" else "Hubungkan sumber latihan", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Text(if (s?.intervalsConnected == true) "Kunci API tersimpan terenkripsi di Android Keystore. Masukkan kunci baru hanya jika ingin menggantinya." else "Aktivitas, beban latihan, dan wellness dapat disinkronkan dari Intervals.icu.", color = Muted, fontSize = 12.sp)
-                OutlinedTextField(value = intervalsKey, onValueChange = { intervalsKey = it }, label = { Text("API key Intervals.icu") }, singleLine = true)
-                Button(onClick = { if (intervalsKey.isNotBlank()) onSyncIntervals(intervalsKey) },
+                OutlinedTextField(value = intervalsKey, onValueChange = { intervalsKey = it }, label = { Text("API key Intervals.icu") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
+                Button(onClick = { if (intervalsKey.isNotBlank()) { val key = intervalsKey; intervalsKey = ""; onSyncIntervals(key) } },
                     enabled = intervalsKey.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = Ink)) {
                     Text("Simpan & sinkronkan")
                 }
