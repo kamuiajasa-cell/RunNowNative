@@ -14,8 +14,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 data class RepositorySnapshot(
     val snapshot: Snapshot,
@@ -25,19 +23,21 @@ data class RepositorySnapshot(
     val workoutCount: Int,
     val wellnessDays: Int,
     val lastWatchSyncSec: Long?,
+    val lastIntervalsSyncMs: Long?,
 )
 
 class RunNowRepository(context: Context) {
     private val app = context.applicationContext
     private val watch = WatchData(app)
+    private val store = RunNowLocalStore(app)
 
     suspend fun load(
         profile: Profile = Profile(),
         nowMs: Long = System.currentTimeMillis(),
         zone: ZoneId = ZoneId.systemDefault(),
-        existing: List<Act> = emptyList(),
-        existingWellness: List<Wellness> = emptyList(),
-        existingStreams: Map<String, StreamSummary> = emptyMap(),
+        existing: List<Act> = store.readActivities(),
+        existingWellness: List<Wellness> = store.readWellness(),
+        existingStreams: Map<String, StreamSummary> = store.readStreams(),
     ): RepositorySnapshot = withContext(Dispatchers.IO) {
         val workouts = watch.workouts(500)
         val watchActs = workouts.mapNotNull { w ->
@@ -129,6 +129,7 @@ class RunNowRepository(context: Context) {
             zone = zone,
             streams = streamMap,
         )
+        store.write(merged.activities, wellness, streamMap)
         RepositorySnapshot(
             snapshot = snapshot,
             streams = streamMap,
@@ -139,4 +140,40 @@ class RunNowRepository(context: Context) {
             lastWatchSyncSec = watch.overview().lastSampleSec,
         )
     }
+    /** Tarik ulang database jam; upsert ID membuat sinkron berulang tidak menumpuk aktivitas. */
+    suspend fun syncWatch(profile: Profile = Profile(), zone: ZoneId = ZoneId.systemDefault()): Pair<RepositorySnapshot, SyncReport> {
+        val before = store.readActivities()
+        val snapshot = load(profile, zone = zone)
+        val now = System.currentTimeMillis()
+        val added = (snapshot.snapshot.acts.size - before.size).coerceAtLeast(0)
+        store.write(snapshot.snapshot.acts, snapshot.snapshot.wellness, snapshot.streams, watchSyncedAtMs = now)
+        return snapshot to SyncReport("Huawei", snapshot.workoutCount, added, 0, now)
+    }
+
+    /** Sinkron Intervals.icu: bootstrap 400 hari, berikutnya 100 hari; nilai wellness dari jam tetap prioritas. */
+    suspend fun syncIntervals(apiKey: String, profile: Profile = Profile(), zone: ZoneId = ZoneId.systemDefault()): Pair<RepositorySnapshot, SyncReport> {
+        require(apiKey.isNotBlank()) { "API key kosong" }
+        val existing = store.readActivities()
+        val from = java.time.LocalDate.now(zone).minusDays(if (existing.isEmpty()) 400 else 100)
+        val result = IntervalsIcuClient(apiKey).sync(from, java.time.LocalDate.now(zone).plusDays(1))
+        val merged = mergeActivities(existing, result.activities, store.readStreams())
+        val wellnessMap = store.readWellness().associateBy { it.id }.toMutableMap()
+        result.wellness.forEach { incoming ->
+            val old = wellnessMap[incoming.id] ?: Wellness(incoming.id)
+            wellnessMap[incoming.id] = old.copy(
+                ctl = incoming.ctl ?: old.ctl, atl = incoming.atl ?: old.atl, tsb = incoming.tsb ?: old.tsb,
+                restingHR = if (old.rhrSrc == "jam" || incoming.restingHR <= 30) old.restingHR else incoming.restingHR,
+                rhrSrc = if (old.rhrSrc == "jam") old.rhrSrc else incoming.rhrSrc,
+                hrv = if (old.hrvSrc == "jam" || incoming.hrv <= 0) old.hrv else incoming.hrv,
+                hrvSrc = if (old.hrvSrc == "jam") old.hrvSrc else incoming.hrvSrc,
+            )
+        }
+        val wellness = wellnessMap.values.sortedBy { it.id }.takeLast(400)
+        store.write(merged.activities, wellness, merged.streams, intervalsSyncedAtMs = result.syncedAtMs)
+        val snapshot = load(profile, zone = zone, existing = merged.activities, existingWellness = wellness, existingStreams = merged.streams)
+        return snapshot to SyncReport("Intervals.icu", result.activities.size, merged.addedOrUpdated, merged.collapsedWatchDuplicates, result.syncedAtMs)
+    }
+
+    fun clearLocalData() = store.clear()
+
 }
