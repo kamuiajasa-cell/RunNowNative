@@ -91,8 +91,40 @@ private class NativeDataSource(private val activity: android.content.Context) {
                 steps = d.steps.toDouble(), spO2 = (d.spo2Avg ?: 0).toDouble(),
             )
         }.sortedBy { it.id }
+        val streamSummaries = workouts.take(35).mapNotNull { workout ->
+            val points = watch.workoutPoints(workout.id).filter { it.lat != null && it.lon != null }
+            if (points.size < 30) return@mapNotNull null
+            val times = ArrayList<Double>(points.size)
+            val distances = ArrayList<Double>(points.size)
+            val heartRates = ArrayList<Double>(points.size)
+            var distance = 0.0
+            var previous: WatchWorkoutPoint? = null
+            val start = points.first().tsSec
+            points.forEach { point ->
+                val prev = previous
+                if (prev != null) {
+                    val lat1 = Math.toRadians(prev.lat!!)
+                    val lat2 = Math.toRadians(point.lat!!)
+                    val dLat = lat2 - lat1
+                    val dLon = Math.toRadians(point.lon!! - prev.lon!!)
+                    val h = kotlin.math.sin(dLat / 2) * kotlin.math.sin(dLat / 2) +
+                        kotlin.math.cos(lat1) * kotlin.math.cos(lat2) *
+                        kotlin.math.sin(dLon / 2) * kotlin.math.sin(dLon / 2)
+                    val segment = 6371000.0 * 2 * kotlin.math.asin(kotlin.math.sqrt(h.coerceIn(0.0, 1.0)))
+                    if (segment < 100.0) distance += segment
+                }
+                times += (point.tsSec - start).toDouble()
+                distances += distance
+                heartRates += (point.hr ?: 0).toDouble()
+                previous = point
+            }
+            val raw = StreamData(times, distances, heartRates.takeIf { values -> values.any { it > 0 } })
+            val summary = Snapshot(profile = Profile(), acts = emptyList(), wellness = emptyList(), nowMs = System.currentTimeMillis(), zone = zone)
+                .summarizeStream(raw, minN = 30)
+            summary?.let { workout.id.toString() to it }
+        }.toMap()
         val profile = Profile()
-        var snap = Snapshot(profile, acts, wellness, nowMs = System.currentTimeMillis(), zone = zone)
+        var snap = Snapshot(profile, acts, wellness, nowMs = System.currentTimeMillis(), zone = zone, streams = streamSummaries)
         val process = if (acts.isNotEmpty() || wellness.isNotEmpty()) snap.processData() else null
         if (process != null) {
             snap = snap.withProcessed(process)
