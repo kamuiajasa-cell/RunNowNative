@@ -95,6 +95,7 @@ private data class NativeState(
     val savedClimateLocation: ClimateLocation?,
     val climateAdvice: Map<Long, ClimateAdvice>,
     val climateComparisons: Map<Long, ClimateComparison>,
+    val syncMessage: String? = null,
 )
 
 private class NativeDataSource(private val activity: android.content.Context) {
@@ -201,8 +202,8 @@ private class NativeDataSource(private val activity: android.content.Context) {
             age = prefs.getInt("age", 0), restManual = rest > 0,
         )
         com.runnow.data.IntervalsCredentialStore(activity).save(apiKey)
-        com.runnow.data.RunNowRepository(activity).syncIntervals(apiKey, profile)
-        load()
+        val report = com.runnow.data.RunNowRepository(activity).syncIntervals(apiKey, profile).second
+        load().copy(syncMessage = "Intervals.icu: ${report.received} aktivitas diterima · ${report.addedOrUpdated} ditambah/diperbarui · ${report.duplicatesCollapsed} duplikat digabung")
     }
 }
 
@@ -253,6 +254,7 @@ private fun RunNowNativeApp(onboardingDone: Boolean, onFinishOnboarding: () -> U
                     }
                 }
                 if (failure != null) Text(failure!!, Modifier.padding(horizontal = 22.dp), color = Color(0xFFB3261E))
+                state?.syncMessage?.let { Text(it, Modifier.padding(horizontal = 22.dp), color = Color(0xFF386641), fontSize = 12.sp) }
                 val s = state
                 if (busy && s == null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 else when (tab) {
