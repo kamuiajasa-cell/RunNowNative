@@ -98,6 +98,7 @@ class RunNowRepository(context: Context) {
         }
 
         val streamMap = merged.streams.toMutableMap()
+        val streamEngine = Snapshot(profile, emptyList(), emptyList(), nowMs = nowMs, zone = zone)
         workouts.forEach { w ->
             val id = "hw${w.id}"
             if (streamMap.containsKey(id) || w.sportType !in setOf(1, 5, 11)) return@forEach
@@ -134,7 +135,7 @@ class RunNowRepository(context: Context) {
                 hr += (p.hr ?: 0).toDouble()
                 previous = p
             }
-            streamMap[id] = summarizeStream(StreamData(time, dist, hr.takeIf { values -> values.any { it > 0 } }), minN = 40) ?: StreamSummary.NONE
+            streamMap[id] = streamEngine.summarizeStream(StreamData(time, dist, hr.takeIf { values -> values.any { it > 0 } }), minN = 40) ?: StreamSummary.NONE
         }
 
         val wellness = wellnessByDate.values.sortedBy { it.id }.takeLast(400)
