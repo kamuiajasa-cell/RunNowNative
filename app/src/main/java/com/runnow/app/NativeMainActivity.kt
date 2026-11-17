@@ -50,7 +50,7 @@ class NativeMainActivity : ComponentActivity() {
             onSaveProfile = { age, rest, max, goal -> getSharedPreferences("native_athlete", MODE_PRIVATE).edit().putInt("age", age).putFloat("resting_hr", rest.toFloat()).putFloat("max_hr", max.toFloat()).putString("goal", goal).apply(); NativeSettingsStore(this).save(NativeSettingsStore(this).load().copy(goal = goal)) },
             onSaveSettings = { settings -> NativeSettingsStore(this).save(settings) },
             loadClimate = { location -> NativeDataSource(this).loadClimate(location) },
-            loadWorkoutPoints = { id -> NativeDataSource(this).loadWorkoutPoints(id) },
+            loadActivityPoints = { act -> NativeDataSource(this).loadActivityPoints(act) },
             load = { NativeDataSource(this).load() },
             syncIntervals = { key -> NativeDataSource(this).syncIntervals(key) },
         ) }
@@ -140,7 +140,31 @@ private class NativeDataSource(private val activity: android.content.Context) {
         )
     }
 
-    suspend fun loadWorkoutPoints(workoutId: Long): List<WatchWorkoutPoint> = withContext(Dispatchers.IO) { WatchData(activity).workoutPoints(workoutId) }
+     suspend fun loadActivityPoints(act: Act): List<WatchWorkoutPoint> = withContext(Dispatchers.IO) {
+        val id = act.icuId.orEmpty()
+        if (id.startsWith("hw")) {
+            val workoutId = id.removePrefix("hw").toLongOrNull() ?: return@withContext emptyList()
+            return@withContext WatchData(activity).workoutPoints(workoutId)
+        }
+        val key = com.runnow.data.IntervalsCredentialStore(activity).read()
+        if (key.isNullOrBlank() || id.isBlank()) return@withContext emptyList()
+        val stream = com.runnow.data.IntervalsIcuClient(key).activityStream(id) ?: return@withContext emptyList()
+        stream.time.indices.mapNotNull { i ->
+            val t = stream.time[i]
+            if (!t.isFinite()) return@mapNotNull null
+            val speed = if (i > 0) {
+                val dt = stream.time[i] - stream.time[i - 1]
+                val dd = stream.distance[i] - stream.distance[i - 1]
+                (dd / dt).takeIf { dt > 0 && it.isFinite() && it in 0.0..15.0 }
+            } else null
+            WatchWorkoutPoint(
+                tsSec = act.start / 1000L + t.toLong(),
+                lat = null, lon = null, alt = null,
+                hr = stream.heartrate?.getOrNull(i)?.takeIf { it.isFinite() && it > 0 }?.toInt(),
+                speed = speed, cadence = null,
+            )
+        }
+    }
 
     suspend fun loadClimate(location: ClimateLocation): WeatherBundle = withContext(Dispatchers.IO) {
         com.runnow.data.ClimateDataRepository(activity).saveLocation(location)
@@ -161,7 +185,7 @@ private class NativeDataSource(private val activity: android.content.Context) {
 }
 
 @Composable
-private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSaveProfile: (Int, Double, Double, String) -> Unit, onSaveSettings: (Settings) -> Unit, loadClimate: suspend (ClimateLocation) -> WeatherBundle, loadWorkoutPoints: suspend (Long) -> List<WatchWorkoutPoint>, load: suspend () -> NativeState, syncIntervals: suspend (String) -> NativeState) {
+private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSaveProfile: (Int, Double, Double, String) -> Unit, onSaveSettings: (Settings) -> Unit, loadClimate: suspend (ClimateLocation) -> WeatherBundle, loadActivityPoints: suspend (Act) -> List<WatchWorkoutPoint>, load: suspend () -> NativeState, syncIntervals: suspend (String) -> NativeState) {
     var tab by remember { mutableIntStateOf(0) }
     var state by remember { mutableStateOf<NativeState?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -206,7 +230,7 @@ private fun RunNowNativeApp(onPair: () -> Unit, onSettings: () -> Unit, onSavePr
                 if (busy && s == null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 else when (tab) {
                     0 -> TodayScreen(s, onPair) { updated -> onSaveSettings(updated); state = state?.copy(settings = updated) }
-                    1 -> HistoryScreen(s, loadWorkoutPoints)
+                    1 -> HistoryScreen(s, loadActivityPoints)
                     2 -> AnalysisScreen(s)
                     else -> ProfileScreen(s, onPair, onSettings, onSaveSettings, loadClimate, onSyncIntervals = { key ->
                         scope.launch {
@@ -289,9 +313,9 @@ private fun TodayScreen(s: NativeState?, onPair: () -> Unit, onSaveSettings: (Se
 }
 
 @Composable
-private fun HistoryScreen(s: NativeState?, loadWorkoutPoints: suspend (Long) -> List<WatchWorkoutPoint>) {
+private fun HistoryScreen(s: NativeState?, loadActivityPoints: suspend (Act) -> List<WatchWorkoutPoint>) {
     var period by remember { mutableStateOf("Bulan ini") }
-    var selected by remember { mutableStateOf<WatchWorkout?>(null) }
+    var selected by remember { mutableStateOf<Act?>(null) }
     var stream by remember(selected?.id) { mutableStateOf<List<WatchWorkoutPoint>>(emptyList()) }
     var streamLoading by remember(selected?.id) { mutableStateOf(false) }
     var streamError by remember(selected?.id) { mutableStateOf<String?>(null) }
@@ -303,16 +327,16 @@ private fun HistoryScreen(s: NativeState?, loadWorkoutPoints: suspend (Long) -> 
         streamLoading = false
     }
     val today = LocalDate.now()
-    val all = s?.workouts.orEmpty()
-    val filtered = all.filter { w ->
-        val date = Instant.ofEpochSecond(w.startSec).atZone(ZoneId.systemDefault()).toLocalDate()
+    val all = s?.acts.orEmpty()
+    val filtered = all.filter { act ->
+        val date = Instant.ofEpochMilli(act.start).atZone(ZoneId.systemDefault()).toLocalDate()
         when (period) {
             "Minggu ini" -> !date.isBefore(today.with(java.time.DayOfWeek.MONDAY))
             "Bulan ini" -> date.year == today.year && date.month == today.month
             else -> true
         }
     }
-    val km = filtered.sumOf { it.distanceM } / 1000.0
+    val km = filtered.sumOf { it.km }
     LazyColumn(contentPadding = PaddingValues(horizontal = 18.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -327,7 +351,7 @@ private fun HistoryScreen(s: NativeState?, loadWorkoutPoints: suspend (Long) -> 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Metric("Jarak", String.format(Locale.US, "%.1f km", km))
                     Metric("Aktivitas", filtered.size.toString())
-                    Metric("Durasi", "${filtered.sumOf { it.durationSec } / 3600}j ${(filtered.sumOf { it.durationSec } % 3600) / 60}m")
+                    Metric("Durasi", "${filtered.sumOf { it.min }.toInt() / 60}j ${filtered.sumOf { it.min }.toInt() % 60}m")
                 }
             }
         }
@@ -337,24 +361,31 @@ private fun HistoryScreen(s: NativeState?, loadWorkoutPoints: suspend (Long) -> 
                 Text("Aktivitas akan muncul setelah disinkronkan dari jam atau Intervals.icu.", color = Muted, fontSize = 12.sp)
             }
         }
-        items(filtered, key = { it.id }) { w ->
+        items(filtered, key = { it.lid }) { act ->
             SurfaceCard {
-                WorkoutRow(w)
-                TextButton(onClick = { selected = w }) { Text("Lihat analisis aktivitas") }
+                ActivityRow(act)
+                TextButton(onClick = { selected = act }) { Text("Lihat analisis aktivitas") }
             }
         }
     }
-    selected?.let { w ->
-        val act = s?.acts?.firstOrNull { it.icuId == "hw${w.id}" || it.icuId == w.id.toString() }
-        val review = act?.let { s?.reviews?.get(it.start) }
-        val climate = act?.let { s?.climateContexts?.get(it.start) }
+    selected?.let { act ->
+        val review = s?.reviews?.get(act.start)
+        val climate = s?.climateContexts?.get(act.start)
+        var activityPoints by remember(act.lid) { mutableStateOf<List<WatchWorkoutPoint>>(emptyList()) }
+        var activityLoading by remember(act.lid) { mutableStateOf(false) }
+        var activityError by remember(act.lid) { mutableStateOf<String?>(null) }
+        LaunchedEffect(act.lid) {
+            activityLoading = true
+            try { activityPoints = loadActivityPoints(act) } catch (e: Exception) { activityError = e.message ?: "Gagal membaca stream" }
+            activityLoading = false
+        }
         AlertDialog(
             onDismissRequest = { selected = null },
-            title = { Text(w.sportName.ifBlank { "Detail aktivitas" }) },
+            title = { Text(act.name.ifBlank { if (act.kind == ActKind.RUN) "Lari" else if (act.kind == ActKind.WALK) "Jalan" else "Aktivitas" }) },
             text = {
                 Column(Modifier.heightIn(max = 520.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    WorkoutRow(w)
-                    ActivityStreamSummary(w, stream, streamLoading, streamError, s?.restingHr ?: 0.0, s?.maxHr ?: 0.0)
+                    ActivityRow(act)
+                    ActivityStreamSummary(activityPoints, activityLoading, activityError, s?.restingHr ?: 0.0, s?.maxHr ?: 0.0)
                     review?.let {
                         Divider()
                         Text(it.headline ?: "Analisis aktivitas", fontWeight = FontWeight.SemiBold)
@@ -368,7 +399,7 @@ private fun HistoryScreen(s: NativeState?, loadWorkoutPoints: suspend (Long) -> 
                         Divider()
                         Text("Cuaca saat lari", fontWeight = FontWeight.SemiBold)
                         Text("${ctx.conditions.temperatureC?.let { "${it.toInt()}°C" } ?: "Tidak tersedia"} · terasa ${ctx.conditions.apparentTemperatureC?.let { "${it.toInt()}°C" } ?: "—"} · RH ${ctx.conditions.humidityPct?.let { "${it.toInt()}%" } ?: "—"}", fontSize = 12.sp)
-                        s?.climateAdvice?.get(act!!.start)?.let { Text(it.message, fontSize = 12.sp) }
+                        s?.climateAdvice?.get(act.start)?.let { Text(it.message, fontSize = 12.sp) }
                     }
                 }
             },
@@ -378,7 +409,7 @@ private fun HistoryScreen(s: NativeState?, loadWorkoutPoints: suspend (Long) -> 
 }
 
 @Composable
-private fun ActivityStreamSummary(w: WatchWorkout, points: List<WatchWorkoutPoint>, loading: Boolean, error: String?, restingHr: Double, maxHr: Double) {
+private fun ActivityStreamSummary(points: List<WatchWorkoutPoint>, loading: Boolean, error: String?, restingHr: Double, maxHr: Double) {
     Divider()
     Text("REKAMAN AKTIVITAS", fontWeight = FontWeight.SemiBold)
     if (loading) {
@@ -849,6 +880,25 @@ private fun DataStatus(s: NativeState?) {
         Text(s?.overview?.lastSampleSec?.let { "Sampel terakhir: " + DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale("id")).withZone(ZoneId.systemDefault()).format(Instant.ofEpochSecond(it)) } ?: "Belum ada sampel harian",
             color = Muted, fontSize = 12.sp)
         s?.error?.let { Text("Catatan pembacaan: $it", color = Color(0xFFB3261E), fontSize = 12.sp) }
+    }
+}
+
+@Composable
+private fun ActivityRow(act: Act) {
+    val date = Instant.ofEpochMilli(act.start).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("EEE, d MMM · HH:mm", Locale("id")))
+    val pace = if (act.km > 0 && act.min > 0) {
+        val sec = (act.min * 60 / act.km).toInt()
+        String.format(Locale.US, "%d:%02d/km", sec / 60, sec % 60)
+    } else "—"
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(act.name.ifBlank { when(act.kind) { ActKind.RUN -> "Lari"; ActKind.WALK -> "Jalan"; else -> "Aktivitas" } }, fontWeight = FontWeight.SemiBold)
+            Text(date + " · " + if (act.icuId?.startsWith("hw") == true) "Huawei" else "Intervals.icu", color = Muted, fontSize = 11.sp)
+        }
+        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(String.format(Locale.US, "%.2f km", act.km), fontWeight = FontWeight.Bold)
+            Text("$pace · ${act.min.toInt()} mnt", color = Muted, fontSize = 11.sp)
+        }
     }
 }
 
