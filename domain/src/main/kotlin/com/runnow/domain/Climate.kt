@@ -315,3 +315,32 @@ fun Snapshot.personalClimateProfile(contexts: Map<Long, ClimateContext>): Person
         }.toList()
     return personalClimateProfile(runs, contexts)
 }
+
+data class ClimateComparison(val deltaHr: Int, val count: Int, val confidence: String)
+
+/** Bandingkan HR easy run dengan baseline sejuk pada pace sebanding (toleransi ±0,5 menit/km). */
+fun Snapshot.personalClimateComparisons(
+    contexts: Map<Long, ClimateContext>,
+    profile: PersonalClimateProfile = personalClimateProfile(contexts),
+): Map<Long, ClimateComparison> {
+    val currentStage = stage()
+    data class Sample(val start: Long, val hr: Double, val pace: Double, val climate: String)
+    val samples = acts.asSequence().filter { it.kind == ActKind.RUN && it.avgHr > 0 && it.km >= 2 }
+        .mapNotNull { a ->
+            val context = contexts[a.start] ?: return@mapNotNull null
+            if (detectType(a, currentStage).type != "easy") return@mapNotNull null
+            Sample(a.start, a.avgHr, a.min / a.km, climateClass(context.conditions, profile))
+        }.toList()
+    val groups = samples.groupBy { it.climate }
+    val cool = groups["sejuk"].orEmpty()
+    if (cool.size < 3) return emptyMap()
+    val baselineHr = median(cool.map { it.hr })
+    val baselinePace = median(cool.map { it.pace })
+    return samples.mapNotNull { sample ->
+        val group = groups[sample.climate].orEmpty()
+        if (sample.climate == "sejuk" || group.size < 3 || abs(sample.pace - baselinePace) > 0.5) return@mapNotNull null
+        val n = min(group.size, cool.size)
+        val confidence = when { n < 6 -> "mulai terbaca"; n < 12 -> "cukup konsisten"; else -> "semakin matang" }
+        sample.start to ClimateComparison((median(group.map { it.hr }) - baselineHr).roundToInt(), n, confidence)
+    }.toMap()
+}
