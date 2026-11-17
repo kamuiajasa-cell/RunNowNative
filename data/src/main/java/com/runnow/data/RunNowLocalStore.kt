@@ -92,7 +92,7 @@ class RunNowLocalStore(context: Context) {
             }
         }
         val streamsJson = JSONObject().apply {
-            streams.entries.takeLast(60).forEach { (key, value) ->
+            streams.entries.toList().takeLast(60).forEach { (key, value) ->
                 put(key, JSONObject().apply {
                     value.fast?.let { put("fast", JSONObject().put("p12", it.p12).put("med", it.med).put("pct", it.pct)) }
                     value.fade?.let { put("fade", JSONObject().put("pct", it.pct)) }
