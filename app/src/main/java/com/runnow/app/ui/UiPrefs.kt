@@ -11,4 +11,24 @@ class UiPrefs(context: Context) {
         set(v) {
             sp.edit().putString("theme", v.name).apply()
         }
+
+    /** Pengingat harian dari rencana minggu. Bawaan menyala, jam 05:30 (sama dengan index.html). */
+    var remindOn: Boolean
+        get() = sp.getBoolean("remind_on", true)
+        set(v) {
+            sp.edit().putBoolean("remind_on", v).apply()
+        }
+
+    var remindRest: Boolean
+        get() = sp.getBoolean("remind_rest", true)
+        set(v) {
+            sp.edit().putBoolean("remind_rest", v).apply()
+        }
+
+    /** "HH:mm". */
+    var remindTime: String
+        get() = sp.getString("remind_time", null) ?: "05:30"
+        set(v) {
+            sp.edit().putString("remind_time", v).apply()
+        }
 }

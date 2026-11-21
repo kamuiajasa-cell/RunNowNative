@@ -52,6 +52,13 @@ private fun MainScaffold(ui: UiState, vm: AppViewModel) {
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
     val current = entry?.destination?.route
+    val go: (Tab) -> Unit = { t ->
+        nav.navigate(t.route) {
+            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
     Scaffold(
         containerColor = c.bg,
         bottomBar = {
@@ -59,13 +66,7 @@ private fun MainScaffold(ui: UiState, vm: AppViewModel) {
                 for (t in Tab.entries) {
                     NavigationBarItem(
                         selected = current == t.route,
-                        onClick = {
-                            nav.navigate(t.route) {
-                                popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
+                        onClick = { go(t) },
                         icon = { Icon(t.icon, contentDescription = null) },
                         label = { Text(t.label) },
                         colors = NavigationBarItemDefaults.colors(
@@ -81,11 +82,11 @@ private fun MainScaffold(ui: UiState, vm: AppViewModel) {
         },
     ) { pad ->
         NavHost(nav, startDestination = Tab.HOME.route, modifier = Modifier.padding(pad)) {
-            composable(Tab.HOME.route) { HomeScreen(ui, vm) }
+            composable(Tab.HOME.route) { HomeScreen(ui, vm, onOpenMe = { go(Tab.ME) }, onOpenWatch = { go(Tab.WATCH) }) }
             composable(Tab.HISTORY.route) { HistoryScreen(ui, vm) }
             composable(Tab.PROGRESS.route) { ProgressScreen(ui, vm) }
             composable(Tab.WATCH.route) { WatchScreen() }
-            composable(Tab.ME.route) { MeScreen(ui, vm) }
+            composable(Tab.ME.route) { MeScreen(ui, vm, onOpenWatch = { go(Tab.WATCH) }) }
         }
     }
 }

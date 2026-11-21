@@ -136,6 +136,20 @@ class RunSenseRepository(
         onChange?.invoke()
     }
 
+    // ---------- perubahan dari layar ----------
+
+    /** saveProfile() di HTML: profil tubuh (usia, RHR, HR maks, LTHR/LTPace custom). Tidak disimpan di mode demo. */
+    fun setProfile(p: com.runnow.domain.Profile) {
+        update(data.copy(profile = p))
+    }
+
+    /** setType() di HTML: konfirmasi jenis sesi sebuah lari (kunci = waktu mulai). */
+    fun setSessionType(startMs: Long, type: String) {
+        val vx = LinkedHashMap(data.vx)
+        vx[startMs] = type
+        update(data.copy(vx = vx))
+    }
+
     // ---------- pengolahan (domain) ----------
 
     /** processData(): hasilnya dipakai UI. RHR otomatis dan tahap (afS) yang baru ikut disimpan. */
@@ -204,13 +218,13 @@ class RunSenseRepository(
         if (id.isNullOrEmpty() || key.isNullOrEmpty() || key == "demo") return
         if (id.startsWith("hw")) return // lari dari jam: ringkasan dihitung dari titik data jam saat masuk
         if (data.sx.containsKey(id) || sxBusy.contains(id)) return
-        if (a.kind != ActKind.RUN || a.min < 5 || a.km < 0.3) return
+        if (a.kind != ActKind.RUN || a.min < 20 || a.km < 3) return
         sxBusy.add(id)
         var result: StreamSummary? = null
         try {
-            val raw = icu.get("activity/${java.net.URLEncoder.encode(id, "UTF-8").replace("+", "%20")}/streams.json?types=time,distance,heartrate")
+            val raw = icu.get("activity/$id/streams?types=time,distance,heartrate")
             val sd = Codec.parseStream(raw)
-            result = (if (sd != null) data.snapshot(clock.now(), zone).summarizeStream(sd, 30) else null) ?: StreamSummary.NONE
+            result = (if (sd != null) data.snapshot(clock.now(), zone).summarizeStream(sd) else null) ?: StreamSummary.NONE
         } catch (e: IcuException) {
             // 4xx = stream memang tidak ada (disimpan); jaringan atau auth = coba lagi nanti
             if (e.kind == IcuException.Kind.HTTP && e.status in 400..499) result = StreamSummary.NONE

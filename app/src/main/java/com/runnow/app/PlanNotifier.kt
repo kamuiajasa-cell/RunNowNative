@@ -74,7 +74,7 @@ object PlanNotifier {
         val nm = ctx.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Pengingat latihan", NotificationManager.IMPORTANCE_DEFAULT))
         val open = PendingIntent.getActivity(
-            ctx, 0, Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            ctx, 0, Intent(ctx, RunNowActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val n = android.app.Notification.Builder(ctx, CHANNEL)

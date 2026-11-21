@@ -181,3 +181,15 @@ Sebelum mengirim perubahan, jalankan build debug dan uji alur yang terdampak pad
 (satu-satunya pemegang `RunSenseRepository`, semua panggilannya di satu thread), `RunNowApp.kt` (tema, gerbang Setup, bottom nav),
 `screens/` (layar sementara yang sudah membaca data nyata; diganti Langkah 8-11). `MainActivity` (WebView) tetap ada
 sebagai cadangan, dibuka dari tab Saya, dan dihapus di Langkah 12.
+
+## Langkah 8-11 (layar Compose)
+
+- 8: `ui/screens/HomeScreen.kt` (kartu utama, kaki/panas, konfirmasi jenis, ulasan lari, kesiapan, minggu ini).
+- 9: `HistoryScreen.kt` (filter, ringkasan, detail aktivitas) dan `ProgressScreen.kt` (volume, komposisi, rencana, CTL/ATL);
+  hitungannya di `:domain` `Progress.kt` dengan tes `ProgressTest`.
+- 10: `MeScreen.kt` (profil, tujuan, rencana minggu, race, run-walk, notifikasi, tema, mode lanjutan). Pengaturan disimpan
+  `:data` `SettingsStore` (kunci dan format sama dengan localStorage HTML). Pengingat: `ui/PlanReminders.kt` -> `PlanNotifier`.
+- 11: `SetupScreen.kt` (API key, target, gaya, Coba Demo via `:data` `DemoData`, jalur data jam).
+
+Belum dipindahkan: kartu Prediksi dan tren pace easy di Progres, cuaca di Home/detail (climHome/climAct), kirim workout ke jam,
+dan halaman pengaturan jam & aplikasi (masih `SettingsActivity` WebView).

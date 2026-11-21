@@ -4,24 +4,23 @@ import android.content.Context
 import android.net.Uri
 import android.webkit.JavascriptInterface
 
-/** URL RunSense yang dimuat layar utama. URL kustom tetap tersimpan sampai pengguna mengubahnya. */
+/** URL server Run Now yang dimuat layar utama. Disimpan permanen, jadi aplikasi ditutup dan dibuka lagi tetap memuat URL terakhir. */
 internal object ServerConfig {
-    const val DEFAULT_HOST = "kamuiajasa-cell.github.io"
-    const val DEFAULT_URL = "https://kamuiajasa-cell.github.io/runsense/runsense.html"
+    const val DEFAULT_HOST = "runnow2.kamui-aja-sa.workers.dev"
+    const val DEFAULT_URL = "https://$DEFAULT_HOST"
     private const val PREFS = "runnow_settings"
     private const val KEY_URL = "start_url"
 
     fun get(ctx: Context): String {
         val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val saved = prefs.getString(KEY_URL, null)?.takeIf { it.isNotBlank() }
-        // Migrasikan URL bawaan RunNow lama ke RunSense; jangan sentuh URL kustom pengguna.
-        if (saved == null || Uri.parse(saved).host == "runnow2.kamui-aja-sa.workers.dev" ||
-            Uri.parse(saved).host == "runnow.local"
-        ) {
+        // Migrasi nilai dari versi yang pernah menjadikan aset lokal sebagai halaman utama.
+        // Jangan mengubah URL server kustom yang memang dipilih pengguna.
+        if (saved != null && Uri.parse(saved).host == "runnow.local") {
             prefs.edit().putString(KEY_URL, DEFAULT_URL).apply()
             return DEFAULT_URL
         }
-        return saved
+        return saved ?: DEFAULT_URL
     }
 
     /** null = hapus pilihan, kembali ke URL bawaan. */
