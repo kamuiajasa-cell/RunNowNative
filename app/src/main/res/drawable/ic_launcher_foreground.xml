@@ -7,18 +7,18 @@
     <!-- Lintasan terbuka yang mengitari pelari -->
     <path
         android:pathData="M78,31 A34,34 0 1 1 30,31"
-        android:strokeColor="#00D15C"
+        android:strokeColor="#C6FF38"
         android:strokeWidth="6"
         android:strokeLineCap="round"
         android:fillColor="@android:color/transparent" />
     <!-- Kepala -->
     <path
         android:pathData="M68,25 A6,6 0 1 1 67.99,25"
-        android:fillColor="#00D15C" />
+        android:fillColor="#C6FF38" />
     <!-- Badan dan gerak kaki/tangan -->
     <path
         android:pathData="M62,36 L54,49 L67,55 L78,48 M54,49 L42,58 L34,56 M67,55 L59,69 L48,77 M67,55 L80,66 L90,64"
-        android:strokeColor="#00D15C"
+        android:strokeColor="#C6FF38"
         android:strokeWidth="5.5"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
@@ -26,7 +26,7 @@
     <!-- Garis denyut kecil sebagai identitas pemantauan lari -->
     <path
         android:pathData="M28,84 L43,84 L49,76 L55,91 L62,81 L78,81"
-        android:strokeColor="#00D15C"
+        android:strokeColor="#C6FF38"
         android:strokeWidth="4"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
