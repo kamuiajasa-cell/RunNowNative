@@ -15,7 +15,7 @@ internal object ServerConfig {
         val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val saved = prefs.getString(KEY_URL, null)?.takeIf { it.isNotBlank() }
         // Migrasikan URL bawaan RunNow lama ke RunSense; jangan sentuh URL kustom pengguna.
-        if (saved == null || saved == "https://runnow2.kamui-aja-sa.workers.dev" ||
+        if (saved == null || Uri.parse(saved).host == "runnow2.kamui-aja-sa.workers.dev" ||
             Uri.parse(saved).host == "runnow.local"
         ) {
             prefs.edit().putString(KEY_URL, DEFAULT_URL).apply()
