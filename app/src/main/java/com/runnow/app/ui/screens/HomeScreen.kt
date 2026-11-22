@@ -1,5 +1,10 @@
 package com.runnow.app.ui.screens
 
+import android.content.Intent
+import androidx.compose.ui.platform.LocalContext
+import com.runnow.app.MainActivity
+import com.runnow.app.ServerConfig
+import com.runnow.app.SettingsActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -63,9 +68,24 @@ private fun localDate(snap: Snapshot, ms: Long): LocalDate = Instant.ofEpochMill
 @Composable
 fun HomeScreen(ui: UiState, vm: AppViewModel, onOpenMe: () -> Unit, onOpenWatch: () -> Unit) {
     val c = RunTheme.colors
+    val context = LocalContext.current
     val r = ui.result
     val snap = ui.snap
     ScreenFrame("") {
+        // Compose tetap menjadi beranda native; situs server tersedia sebagai layar WebView terpisah.
+        RunCard {
+            LabelText("RunNow Web")
+            Muted("Server aktif: ${ServerConfig.get(context)}")
+            PrimaryBtn("Buka Beranda Web", {
+                context.startActivity(Intent(context, MainActivity::class.java))
+            })
+            OutlineBtn("Atur alamat server", {
+                context.startActivity(
+                    Intent(context, SettingsActivity::class.java)
+                        .putExtra(SettingsActivity.EXTRA_GROUP, "server"),
+                )
+            })
+        }
         if (r == null || snap == null) {
             Text("Hari Ini", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = c.tx)
             EmptyNote()
