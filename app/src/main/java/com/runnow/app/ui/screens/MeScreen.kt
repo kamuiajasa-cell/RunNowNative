@@ -173,17 +173,17 @@ private fun ProfileCard(ui: UiState, snap: Snapshot, vm: AppViewModel) {
     val r28 = remember(snap) { snap.rhr28() }
     RunCard {
         LabelText("Profil lari")
-        NumField("Usia", age, "—") { age = it; touched = true }
-        NumField("Detak istirahat (28 hari)", rest, "—") { rest = it; touched = true }
+        NumField("Usia", age, placeholder = "—", onChange = { age = it; touched = true })
+        NumField("Detak istirahat (28 hari)", rest, placeholder = "—", onChange = { rest = it; touched = true })
         Muted(
             if (p.restManual) "Memakai angka yang kamu isi" + (if (r28 != null) " (rata-rata 28 hari: ${r28.avg} bpm). Kosongkan untuk kembali otomatis." else ". Kosongkan untuk otomatis.")
             else if (r28 != null) "Otomatis: rata-rata ${r28.n} hari dalam 28 hari terakhir. Ketik angka untuk menimpa."
             else "Otomatis rata-rata 28 hari, menunggu minimal 5 hari data RHR.",
         )
-        NumField("Detak maksimal", max, "—") { max = it; touched = true }
-        NumField("LTHR custom (bpm)", lthr, "auto") { lthr = it; touched = true }
+        NumField("Detak maksimal", max, placeholder = "—", onChange = { max = it; touched = true })
+        NumField("LTHR custom (bpm)", lthr, placeholder = "auto", onChange = { lthr = it; touched = true })
         Muted("Saran auto: " + (a?.lthrAuto?.let { "$it bpm" } ?: "belum cukup data") + if (p.lthrC > 0) " · dipakai: ${p.lthrC} bpm (custom)" else "")
-        NumField("LTPace custom (mnt/km)", ltp, "mis. 8:30", keyboard = KeyboardType.Text) { ltp = it; touched = true }
+        NumField("LTPace custom (mnt/km)", ltp, placeholder = "mis. 8:30", onChange = { ltp = it; touched = true }, keyboard = KeyboardType.Text)
         Muted("Saran auto: " + (a?.ltPaceAuto?.let { "$it /km" } ?: "belum cukup data") + if (p.ltpC > 0) " · dipakai: ${mp(p.ltpC / 60.0)} /km (custom)" else "")
         Muted("Terisi otomatis dari Intervals.icu bila tersedia.")
     }
@@ -364,7 +364,7 @@ private fun AdvancedCard(ui: UiState, snap: Snapshot) {
         }
         LabelText("Tes lapangan 12 menit (Cooper)")
         Muted("Lari sekuat mampu 12 menit di lintasan datar, lalu isi jarak totalnya. Hasilnya pembanding untuk estimasi di atas.")
-        NumField("Jarak (meter)", cooper, "mis. 2200") { cooper = it }
+        NumField("Jarak (meter)", cooper, placeholder = "mis. 2200", onChange = { cooper = it })
         val d = cooper.toDoubleOrNull() ?: 0.0
         KvRow("Estimasi Max METs", if (d in 800.0..4500.0) { val vo2 = (d - 504.9) / 44.73; f1(vo2 / 3.5) + " (≈ VO₂max " + Math.round(vo2) + ")" } else "—")
         LabelText("Referensi intensitas")
