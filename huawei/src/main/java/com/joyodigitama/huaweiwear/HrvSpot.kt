@@ -62,6 +62,56 @@ internal class HrvSpot(
     if (running.get()) cancelRequested = true
   }
 
+  /**
+   * Briefly opens the watch's RR/HRV sensor stream after a fresh connection, then closes it after one second.
+   * This is a sensor wake-up/probe only: one second is not enough data to calculate or store a valid HRV value.
+   */
+  suspend fun primeOnConnect() {
+    val handle = link.handle() ?: return
+    if (!DeviceCaps.supports(HrvSpotCodec.SERVICE, HrvSpotCodec.OPEN_CLOSE)) {
+      log("HRV sensor probe skipped: watch does not support 19/01")
+      return
+    }
+    if (liveHeartRate.workoutActive || !running.compareAndSet(false, true)) {
+      log("HRV sensor probe skipped: heart-rate sensor is busy")
+      return
+    }
+    val session = handle.session
+    var subscription: AutoCloseable? = null
+    var opened = false
+    try {
+      liveHeartRate.pause()
+      subscription = session.subscribe(HrvSpotCodec.SERVICE.toByte(), HrvSpotCodec.RRI_DATA.toByte(), "HRV connection probe") { }
+      opened = true
+      session.send(HrRriTest.OpenOrClose.Request(session.params, HrvSpotCodec.OPEN), "HRV sensor probe open (19/01 {01: 3})")
+      delay(1_000L)
+      if (link.handle()?.session !== session || session.closeCause != null) {
+        log("HRV sensor probe ended: connection changed during the one-second window")
+      } else {
+        log("HRV sensor probe completed after 1 second")
+      }
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      events.log(LogDirection.ERROR, null, null, null, "HRV sensor probe failed: ${e.message}")
+    } finally {
+      withContext(NonCancellable) {
+        subscription?.close()
+        if (opened) {
+          try {
+            session.send(HrRriTest.OpenOrClose.Request(session.params, HrvSpotCodec.CLOSE), "HRV sensor probe close (19/01 {01: 4})")
+          } catch (e: CancellationException) {
+            throw e
+          } catch (e: Exception) {
+            events.log(LogDirection.ERROR, null, null, null, "HRV sensor probe could not close the stream: ${e.message}")
+          }
+        }
+        liveHeartRate.resume()
+        running.set(false)
+      }
+    }
+  }
+
   /** Measures for a minute, stores the result and returns it; throws [WearException] with a code JS can show. */
   suspend fun measure(): HrvReadingData {
     val collected = collect()
