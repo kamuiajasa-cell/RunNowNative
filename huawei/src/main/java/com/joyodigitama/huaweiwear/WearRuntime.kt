@@ -50,6 +50,10 @@ internal class WearRuntime private constructor(context: Context) {
 
   private val listeners = CopyOnWriteArraySet<WearEvents>()
 
+  /** One automatic HRV sensor probe per live Bluetooth session (CONNECTED can be emitted again after sync). */
+  @Volatile
+  private var hrvProbeSession: HuaweiSession? = null
+
   /** Set by the foreground service while it runs. */
   @Volatile
   var controller: BackgroundController? = null
@@ -78,6 +82,30 @@ internal class WearRuntime private constructor(context: Context) {
       features.onLinkState(state)
       weather.onLinkState(state)
       liveHeartRate.onLinkState(state)
+      when (state) {
+        LinkState.CONNECTED -> {
+          val session = link.handle()?.session
+          val shouldProbe = synchronized(this@WearRuntime) {
+            if (session != null && hrvProbeSession !== session) {
+              hrvProbeSession = session
+              true
+            } else false
+          }
+          if (shouldProbe) {
+            scope.launch {
+              try {
+                hrv.primeOnConnect()
+              } catch (e: CancellationException) {
+                throw e
+              } catch (e: Exception) {
+                events.log(LogDirection.ERROR, null, null, null, "Automatic HRV sensor probe failed: ${e.message}")
+              }
+            }
+          }
+        }
+        LinkState.DISCONNECTED -> synchronized(this@WearRuntime) { hrvProbeSession = null }
+        else -> Unit
+      }
       stress.onLinkState(state)
       extras.onLinkState(state)
       workoutLink.onLinkState(state)
